@@ -1755,6 +1755,30 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
+  - RNDateTimePicker (8.3.0):
+    - DoubleConversion
+    - glog
+    - hermes-engine
+    - RCT-Folly (= 2024.11.18.00)
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-hermes
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - Yoga
   - RNFS (2.20.0):
     - React-Core
   - RNGestureHandler (2.25.0):
@@ -2082,6 +2106,7 @@ DEPENDENCIES:
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - RNAudioRecorderPlayer (from `../node_modules/react-native-audio-recorder-player`)
   - "RNCPicker (from `../node_modules/@react-native-picker/picker`)"
+  - "RNDateTimePicker (from `../node_modules/@react-native-community/datetimepicker`)"
   - RNFS (from `../node_modules/react-native-fs`)
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNPermissions (from `../node_modules/react-native-permissions`)
@@ -2240,6 +2265,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-audio-recorder-player"
   RNCPicker:
     :path: "../node_modules/@react-native-picker/picker"
+  RNDateTimePicker:
+    :path: "../node_modules/@react-native-community/datetimepicker"
   RNFS:
     :path: "../node_modules/react-native-fs"
   RNGestureHandler:
@@ -2328,6 +2355,7 @@ SPEC CHECKSUMS:
   ReactCommon: 9f975582dc535de1de110bdb46d4553140a77541
   RNAudioRecorderPlayer: 224c7de87722938aedce04000d09baa633148f5b
   RNCPicker: 04b02770d871072243f4a95fa2523b9c3398a2f5
+  RNDateTimePicker: eac1f82db8ebabd4a93f8250676f16fe7ca47b99
   RNFS: 4ac0f0ea233904cb798630b3c077808c06931688
   RNGestureHandler: 5d8431415d4b8518e86e289e9ad5bb9be78f6dba
   RNPermissions: 35555a2e916b4cd25b28459460d1b0fe1751cf19

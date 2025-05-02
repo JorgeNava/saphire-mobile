@@ -1,4 +1,4 @@
-import React from 'react';
+/* import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './src/types';
@@ -10,6 +10,7 @@ import HistoryScreen from './src/screens/HistoryScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function App(): React.JSX.Element {
+  console.log('App cargó');
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Home">
@@ -21,3 +22,14 @@ function App(): React.JSX.Element {
 }
 
 export default App;
+ */
+import React from 'react';
+import { View, Text } from 'react-native';
+
+export default function App() {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>🧪 App cargó correctamente</Text>
+    </View>
+  );
+}
