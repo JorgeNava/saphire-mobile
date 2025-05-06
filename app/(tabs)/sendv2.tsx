@@ -151,7 +151,7 @@ export default function Send() {
         backgroundColor: 'transparent',
         borderTopWidth: 0,
         paddingHorizontal: 8,
-        paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0,
+        paddingBottom: Platform.OS === 'ios' ? 0 : 0,
       }}
     />
   );
@@ -191,86 +191,90 @@ export default function Send() {
   );
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.select({
-        ios: 'padding',
-        android: 'height'
-      })}
-      keyboardVerticalOffset={Platform.select({
-        ios: insets.top,
-        android: 0
-      })}
-    >
-      <View style={[styles.header, { marginTop: insets.top }]}>
-        <Text style={[styles.title, { color: theme.text }]}>Escribe tu mensaje</Text>
-      </View>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.select({
+          ios: 'padding',
+          android: undefined
+        })}
+        keyboardVerticalOffset={Platform.select({
+          ios: 0,
+          android: 0
+        })}
+      >
+        <View style={[styles.header, { marginTop: insets.top }]}>
+          <Text style={[styles.title, { color: theme.text }]}>Escribe tu mensaje</Text>
+        </View>
 
-      <View style={styles.classificationContainer}>
-        <TouchableOpacity onPress={toggleAccordion}>
-          <Text style={[styles.label, { color: theme.text }]}>
-            Clasificación {showClassificationInput ? '▲' : '▼'}
-          </Text>
-        </TouchableOpacity>
-        {showClassificationInput && (
-          <TextInput
-            placeholder="Ej: reflexiones, lugares, emociones"
-            placeholderTextColor={theme.text}
-            value={classification}
-            onChangeText={setClassification}
-            style={[
-              styles.input,
-              {
-                color: theme.text,
-                backgroundColor: theme.card,
-                borderColor: theme.border,
-              },
-            ]}
+        <View style={styles.classificationContainer}>
+          <TouchableOpacity onPress={toggleAccordion}>
+            <Text style={[styles.label, { color: theme.text }]}>
+              Clasificación {showClassificationInput ? '▲' : '▼'}
+            </Text>
+          </TouchableOpacity>
+          {showClassificationInput && (
+            <TextInput
+              placeholder="Ej: reflexiones, lugares, emociones"
+              placeholderTextColor={theme.text}
+              value={classification}
+              onChangeText={setClassification}
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  backgroundColor: theme.card,
+                  borderColor: theme.border,
+                },
+              ]}
+            />
+          )}
+        </View>
+
+        <View style={styles.chatContainer}>
+          <GiftedChat
+            messages={messages}
+            onSend={newMessages => onSend(newMessages)}
+            user={{ _id: userId } as User}
+            renderInputToolbar={renderInputToolbar}
+            renderComposer={renderComposer}
+            placeholder=""
+            text={text}
+            onInputTextChanged={setText}
+            isTyping={sendingText}
+            maxComposerHeight={100}
+            minComposerHeight={45}
+            bottomOffset={0}
+            renderAvatar={null}
+            alwaysShowSend
+            inverted={true}
+            messagesContainerStyle={styles.messagesContainer}
+            renderFooter={() =>
+              sendingAudio ? (
+                <ActivityIndicator size="small" color={theme.text} style={{ marginBottom: 10 }} />
+              ) : null
+            }
+            listViewProps={{
+              scrollEventThrottle: 16,
+              keyboardDismissMode: 'interactive',
+              keyboardShouldPersistTaps: 'handled',
+              contentContainerStyle: {
+                flexGrow: 1,
+                justifyContent: 'flex-end',
+              }
+            }}
           />
-        )}
-      </View>
-
-      <View style={styles.chatContainer}>
-        <GiftedChat
-          messages={messages}
-          onSend={newMessages => onSend(newMessages)}
-          user={{ _id: userId } as User}
-          renderInputToolbar={renderInputToolbar}
-          renderComposer={renderComposer}
-          placeholder=""
-          text={text}
-          onInputTextChanged={setText}
-          isTyping={sendingText}
-          maxComposerHeight={100}
-          minComposerHeight={45}
-          bottomOffset={Platform.select({
-            ios: insets.bottom,
-            android: 0
-          })}
-          messagesContainerStyle={{
-            paddingBottom: Platform.select({
-              ios: 0,
-              android: insets.bottom
-            })
-          }}
-          keyboardShouldPersistTaps="handled"
-          renderFooter={() =>
-            sendingAudio ? (
-              <ActivityIndicator size="small" color={theme.text} style={{ marginBottom: 10 }} />
-            ) : null
-          }
-          listViewProps={{
-            scrollEventThrottle: 16,
-            keyboardDismissMode: 'on-drag'
-          }}
-        />
-      </View>
-    </KeyboardAvoidingView>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { 
+    flex: 1,
+  },
+  keyboardView: {
     flex: 1,
   },
   header: {
@@ -298,6 +302,9 @@ const styles = StyleSheet.create({
   },
   chatContainer: {
     flex: 1,
+  },
+  messagesContainer: {
+    flexGrow: 1,
   },
   rowInputContainer: {
     flexDirection: 'row',

@@ -18,8 +18,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.jonava.saphiremobile",
-      "windowSoftInputMode": "adjustResize"
+      "package": "com.jonava.saphiremobile"
     },
     "web": {
       "bundler": "metro",
