@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   UIManager,
   View,
+  useColorScheme,
 } from 'react-native';
 
 const API_BASE = 'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev/messages';
@@ -29,6 +30,7 @@ function toISOStringWithZ(date: Date) {
 export default function MessagesScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const colorScheme = useColorScheme();
 
   const [usedAI, setUsedAI] = useState<boolean | null>(null);
   const [classification, setClassification] = useState('');
@@ -46,16 +48,21 @@ export default function MessagesScreen() {
     show: boolean;
   }>({ field: '', show: false });
 
+  const theme = {
+    background: colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC',
+    text: colorScheme === 'dark' ? '#fff' : '#000',
+    card: colorScheme === 'dark' ? '#1e1e1e' : '#fff',
+    border: colorScheme === 'dark' ? '#444' : '#ccc',
+  };
+
   const showPicker = (field: string) => {
     setPickerVisible({ field, show: true });
   };
 
   const onChangeDate = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      if (!event || event.type === 'dismissed') {
-        setPickerVisible({ field: '', show: false });
-        return;
-      }
+    if (Platform.OS === 'android' && event?.type === 'dismissed') {
+      setPickerVisible({ field: '', show: false });
+      return;
     }
 
     if (selectedDate) {
@@ -91,9 +98,7 @@ export default function MessagesScreen() {
         if (dateTo) params.append('dateTo', toISOStringWithZ(dateTo));
         if (lastUpdatedFrom) params.append('lastUpdatedFrom', toISOStringWithZ(lastUpdatedFrom));
         if (lastUpdatedTo) params.append('lastUpdatedTo', toISOStringWithZ(lastUpdatedTo));
-        if (usedAI !== null) {
-          params.append('usedAI', usedAI.toString());
-        }
+        if (usedAI !== null) params.append('usedAI', usedAI.toString());
       }
 
       const res = await fetch(`${API_BASE}?${params.toString()}`);
@@ -128,42 +133,37 @@ export default function MessagesScreen() {
 
   const getPickerValue = (): Date => {
     switch (pickerVisible.field) {
-      case 'dateFrom':
-        return dateFrom ?? new Date();
-      case 'dateTo':
-        return dateTo ?? new Date();
-      case 'lastUpdatedFrom':
-        return lastUpdatedFrom ?? new Date();
-      case 'lastUpdatedTo':
-        return lastUpdatedTo ?? new Date();
-      default:
-        return new Date();
+      case 'dateFrom': return dateFrom ?? new Date();
+      case 'dateTo': return dateTo ?? new Date();
+      case 'lastUpdatedFrom': return lastUpdatedFrom ?? new Date();
+      case 'lastUpdatedTo': return lastUpdatedTo ?? new Date();
+      default: return new Date();
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Mensajes</Text>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <Text style={[styles.title, { color: theme.text }]}>Mensajes</Text>
 
       <View style={styles.filters}>
-        <Text style={styles.label}>Clasificación</Text>
+        <Text style={[styles.label, { color: theme.text }]}>Clasificación</Text>
         <TextInput
           placeholder="Clasificación"
           value={classification}
           onChangeText={setClassification}
-          style={styles.input}
-          placeholderTextColor="#000"
+          style={[styles.input, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
+          placeholderTextColor={theme.text}
         />
 
         <View style={styles.switchContainer}>
-          <Text>Tipo: {inputType}</Text>
+          <Text style={{ color: theme.text }}>Tipo: {inputType}</Text>
           <Switch value={inputType === 'audio'} onValueChange={toggleInputType} />
         </View>
 
         <View style={styles.switchContainer}>
-          <Text>Usó IA:</Text>
-          <TouchableOpacity onPress={toggleUsedAI} style={styles.toggleButton}>
-            <Text style={styles.toggleText}>
+          <Text style={{ color: theme.text }}>Usó IA:</Text>
+          <TouchableOpacity onPress={toggleUsedAI} style={[styles.toggleButton, { backgroundColor: theme.card }]}>
+            <Text style={[styles.toggleText, { color: theme.text }]}>
               {usedAI === null ? 'Cualquiera' : usedAI ? 'Sí' : 'No'}
             </Text>
           </TouchableOpacity>
@@ -171,36 +171,24 @@ export default function MessagesScreen() {
 
         <View style={styles.dropdownContainer}>
           <TouchableOpacity onPress={toggleDateFilters} style={styles.dropdownToggle}>
-            <Text style={styles.label}>Por fechas {showDateFilters ? '▲' : '▼'}</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Por fechas {showDateFilters ? '▲' : '▼'}</Text>
           </TouchableOpacity>
 
           {showDateFilters && (
             <View style={{ marginTop: 10 }}>
-              <Text style={styles.label}>Desde (fecha creación)</Text>
-              <TouchableOpacity style={styles.dateButton} onPress={() => showPicker('dateFrom')}>
-                <Text style={styles.dateText}>{formatDateDisplay(dateFrom)}</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.label}>Hasta (fecha creación)</Text>
-              <TouchableOpacity style={styles.dateButton} onPress={() => showPicker('dateTo')}>
-                <Text style={styles.dateText}>{formatDateDisplay(dateTo)}</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.label}>Desde (última actualización)</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => showPicker('lastUpdatedFrom')}
-              >
-                <Text style={styles.dateText}>{formatDateDisplay(lastUpdatedFrom)}</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.label}>Hasta (última actualización)</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => showPicker('lastUpdatedTo')}
-              >
-                <Text style={styles.dateText}>{formatDateDisplay(lastUpdatedTo)}</Text>
-              </TouchableOpacity>
+              {[
+                { label: 'Desde (fecha creación)', field: 'dateFrom', value: dateFrom },
+                { label: 'Hasta (fecha creación)', field: 'dateTo', value: dateTo },
+                { label: 'Desde (última actualización)', field: 'lastUpdatedFrom', value: lastUpdatedFrom },
+                { label: 'Hasta (última actualización)', field: 'lastUpdatedTo', value: lastUpdatedTo },
+              ].map(({ label, field, value }) => (
+                <View key={field}>
+                  <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
+                  <TouchableOpacity style={[styles.dateButton, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => showPicker(field)}>
+                    <Text style={{ color: theme.text }}>{formatDateDisplay(value)}</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
           )}
         </View>
@@ -225,16 +213,14 @@ export default function MessagesScreen() {
           keyExtractor={(item) => item.messageId}
           contentContainerStyle={{ paddingBottom: 50 }}
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.text}>Tipo: {item.inputType}</Text>
-              <Text style={styles.text}>Contenido: {item.originalContent}</Text>
-              <Text style={styles.text}>Clasificación: {item.classification}</Text>
-              <Text style={styles.text}>Usó IA: {item.usedAI ? 'Sí' : 'No'}</Text>
-              <Text style={styles.text}>Creado: {new Date(item.timestamp).toLocaleString()}</Text>
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={{ color: theme.text }}>Tipo: {item.inputType}</Text>
+              <Text style={{ color: theme.text }}>Contenido: {item.originalContent}</Text>
+              <Text style={{ color: theme.text }}>Clasificación: {item.classification}</Text>
+              <Text style={{ color: theme.text }}>Usó IA: {item.usedAI ? 'Sí' : 'No'}</Text>
+              <Text style={{ color: theme.text }}>Creado: {new Date(item.timestamp).toLocaleString()}</Text>
               {item.lastUpdated && (
-                <Text style={styles.text}>
-                  Actualizado: {new Date(item.lastUpdated).toLocaleString()}
-                </Text>
+                <Text style={{ color: theme.text }}>Actualizado: {new Date(item.lastUpdated).toLocaleString()}</Text>
               )}
             </View>
           )}
@@ -245,75 +231,16 @@ export default function MessagesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: '#f2f2f2',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    color: '#000',
-  },
-  filters: {
-    marginBottom: 20,
-  },
-  label: {
-    marginBottom: 4,
-    color: '#000',
-    fontWeight: '600',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 8,
-    borderRadius: 6,
-    color: '#000',
-    marginBottom: 10,
-  },
-  switchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  toggleButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 6,
-  },
-  toggleText: {
-    color: '#000',
-    fontWeight: '500',
-  },
-  dateButton: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 10,
-    borderRadius: 6,
-    backgroundColor: '#fff',
-    marginBottom: 10,
-  },
-  dateText: {
-    color: '#000',
-  },
-  dropdownContainer: {
-    marginBottom: 16,
-  },
-  dropdownToggle: {
-    paddingVertical: 6,
-  },
-  card: {
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    marginBottom: 12,
-    backgroundColor: '#fff',
-  },
-  text: {
-    color: '#000',
-  },
+  container: { flex: 1, padding: 16 },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 16, marginTop: 40 },
+  filters: { marginBottom: 20 },
+  label: { marginBottom: 4, fontWeight: '600' },
+  input: { borderWidth: 1, padding: 8, borderRadius: 6, marginBottom: 10 },
+  switchContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  toggleButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  toggleText: { fontWeight: '500' },
+  dateButton: { borderWidth: 1, padding: 10, borderRadius: 6, marginBottom: 10 },
+  dropdownContainer: { marginBottom: 16 },
+  dropdownToggle: { paddingVertical: 6 },
+  card: { padding: 12, borderWidth: 1, borderRadius: 8, marginBottom: 12 },
 });
