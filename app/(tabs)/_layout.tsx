@@ -35,11 +35,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="send"
+        name="chat"
         options={{
-          title: 'Enviar',
+          title: 'Chat',
           tabBarIcon: ({ color }: { color: string }) => (
-            <IconSymbol size={28} name="paperplane.fill" color={color} />
+            <IconSymbol size={28} name="message.circle.fill" color={color} />
           ),
         }}
       />
