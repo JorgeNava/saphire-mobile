@@ -1,4 +1,4 @@
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+/* import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Buffer } from 'buffer';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -30,7 +30,7 @@ const TEXT_ENDPOINT = 'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/de
 const AUDIO_UPLOAD_ENDPOINT = 'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev/generate-upload-url';
 const AUDIO_NOTIFY_ENDPOINT = 'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev/audio';
 
-export default function Send() {
+export default function SendOld() {
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState('');
@@ -259,10 +259,6 @@ export default function Send() {
               <ActivityIndicator size="small" color={theme.text} style={{ marginBottom: 10 }} />
             ) : null
           }
-          listViewProps={{
-            scrollEventThrottle: 16,
-            keyboardDismissMode: 'on-drag'
-          }}
         />
       </View>
     </KeyboardAvoidingView>
@@ -322,3 +318,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+ */
