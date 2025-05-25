@@ -1,3 +1,4 @@
+// ChatScreen.tsx
 import {
   Box,
   HStack,
@@ -50,13 +51,19 @@ export default function ChatScreen() {
   const theme = {
     background: colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC',
   };
-  // Input style: background y borde más oscuro que el fondo
+  // Input style: fondo y borde más oscuro que el fondo general
   const inputBg = colorScheme === 'dark' ? '#162E3C' : '#7DAEB5';
   const inputBorder = colorScheme === 'dark' ? '#0F2128' : '#6B8B90';
 
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', text: 'Hola, Jorge 👋', fromMe: false },
-    { id: '2', text: '¡Hola! ¿Todo bien?', fromMe: true, status: 'sent', sentAt: Date.now() },
+    {
+      id: '2',
+      text: '¡Hola! ¿Todo bien?',
+      fromMe: true,
+      status: 'sent',
+      sentAt: Date.now(),
+    },
   ]);
   const [text, setText] = useState('');
   const flatListRef = useRef<FlatList<Message>>(null);
@@ -65,31 +72,26 @@ export default function ChatScreen() {
   const [sendingText, setSendingText] = useState(false);
   const [sendingAudio, setSendingAudio] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const recordStart = useRef<number | null>(null);
+  const [micPressed, setMicPressed] = useState(false);
 
   const handleSend = async () => {
     if (!text.trim()) return;
     const id = Date.now().toString();
-    // Agregar mensaje optimista
     setMessages(prev => [
       { id, text, fromMe: true, status: 'sending' },
       ...prev,
     ]);
     setText('');
     setSendingText(true);
-
     try {
       await fetch(TEXT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: 'user123', text }),
       });
-      // Marcar como enviado con timestamp
       setMessages(prev =>
         prev.map(m =>
-          m.id === id
-            ? { ...m, status: 'sent', sentAt: Date.now() }
-            : m
+          m.id === id ? { ...m, status: 'sent', sentAt: Date.now() } : m
         )
       );
     } catch (err) {
@@ -99,7 +101,6 @@ export default function ChatScreen() {
     }
   };
 
-  // Funciones para grabación de audio
   const startRecording = async () => {
     try {
       await Audio.requestPermissionsAsync();
@@ -113,25 +114,22 @@ export default function ChatScreen() {
       );
       await rec.startAsync();
       setRecording(rec);
-      recordStart.current = Date.now();
     } catch (error) {
       console.error('Error al iniciar grabación:', error);
     }
   };
 
   const stopRecording = async () => {
+    if (!recording) return;
     try {
-      if (!recording) return;
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       if (!uri) return;
-
       setSendingAudio(true);
-      // Solicitar URL de subida
+      // solicitar URL de subida
       const resp = await fetch(AUDIO_UPLOAD_ENDPOINT, { method: 'POST' });
       const { uploadUrl, s3Key } = await resp.json();
-
-      // Leer binario y subir
+      // leer binario y subir
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
@@ -141,13 +139,21 @@ export default function ChatScreen() {
         headers: { 'Content-Type': 'audio/mpeg' },
         body: buffer,
       });
-
-      // Notificar procesamiento
-      await fetch(AUDIO_NOTIFY_ENDPOINT, {
+      // notificar procesamiento
+      // Notificar procesamiento y obtener transcripción
+      const notifyRes = await fetch(AUDIO_NOTIFY_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: 'user123', s3Key }),
       });
+      const notifyData = await notifyRes.json();
+      const { transcription } = notifyData;
+      // Insertar mensaje transcrito en el chat
+      setMessages(prev => [
+        { id: Date.now().toString(), text: transcription, fromMe: true, status: 'sent', sentAt: Date.now() },
+        ...prev,
+      ]);
+
     } catch (err) {
       console.error('Error al enviar audio:', err);
     } finally {
@@ -157,17 +163,21 @@ export default function ChatScreen() {
   };
 
   const handleMicPressIn = (e: GestureResponderEvent) => {
-    if (!text.trim()) startRecording();
+    if (!text.trim()) {
+      setMicPressed(true);
+      startRecording();
+    }
   };
   const handleMicPressOut = (e: GestureResponderEvent) => {
-    if (!text.trim()) stopRecording();
+    if (!text.trim()) {
+      setMicPressed(false);
+      stopRecording();
+    }
   };
 
   const renderItem: ListRenderItem<Message> = ({ item }) => (
     <Box sx={{ mb: '$2' }}>
-      <HStack
-        justifyContent={item.fromMe ? 'flex-end' : 'flex-start'}
-      >
+      <HStack justifyContent={item.fromMe ? 'flex-end' : 'flex-start'}>
         <Box
           sx={{
             px: '$3',
@@ -248,6 +258,7 @@ export default function ChatScreen() {
               p: '$3',
               justifyContent: 'center',
               alignItems: 'center',
+              transform: [{ scale: micPressed ? 1.25 : 1 }],
             }}
           >
             <Icon
