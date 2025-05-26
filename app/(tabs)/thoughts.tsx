@@ -27,7 +27,7 @@ function toISOStringWithZ(date: Date) {
   return new Date(date).toISOString().split('.')[0] + 'Z';
 }
 
-export default function MessagesScreen() {
+export default function ThoughtsScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const colorScheme = useColorScheme();
@@ -143,7 +143,7 @@ export default function MessagesScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <Text style={[styles.title, { color: theme.text }]}>Mensajes</Text>
+      <Text style={[styles.title, { color: theme.text }]}>Pensamientos</Text>
 
       <View style={styles.filters}>
         <Text style={[styles.label, { color: theme.text }]}>Clasificación</Text>

@@ -23,19 +23,10 @@ export default function TabLayout() {
             position: 'absolute',
           },
           default: {},
-        }),
+        })
       }}>
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }: { color: string }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
         options={{
           title: 'Chat',
           tabBarIcon: ({ color }: { color: string }) => (
@@ -44,11 +35,29 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="messages"
+        name="thoughts"
         options={{
-          title: 'Mensajes',
+          title: 'Pensamientos',
           tabBarIcon: ({ color }: { color: string }) => (
             <IconSymbol size={28} name="tray.full.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="lists"
+        options={{
+          title: 'Listas',
+          tabBarIcon: ({ color }: { color: string }) => (
+            <IconSymbol size={28} name="tray.full.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="home"
+        options={{
+          title: 'Info',
+          tabBarIcon: ({ color }: { color: string }) => (
+            <IconSymbol size={28} name="house.fill" color={color} />
           ),
         }}
       />
