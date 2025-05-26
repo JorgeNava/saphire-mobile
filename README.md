@@ -129,6 +129,10 @@ Y luego hacer el build con EAS.
 - 📎 Adjuntar imágenes a mensajes
 - 🔔 Notificaciones push usando Expo Notifications
 - 🌐 Versión web usando `expo-router` y `expo-web`
+- Sistema de Notas
+    - Contraseña y encriptacion de datos
+- Base de Conocimientos (tecnicos y diarios - aws, recetas, etc...)
+    - Generar conocimiento a traves de mis interacciones diarias
 
 ---
 
