@@ -3,8 +3,6 @@ import {
   Box,
   HStack,
   Icon,
-  Input,
-  InputField,
   Pressable,
   Text,
 } from '@gluestack-ui/themed';
@@ -17,6 +15,7 @@ import {
   KeyboardAvoidingView,
   ListRenderItem,
   Platform,
+  StyleSheet,
   TextInput,
   useColorScheme,
 } from 'react-native';
@@ -32,14 +31,19 @@ export default function ListDetailScreen() {
   const colorScheme = useColorScheme();
   const bg = colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC';
 
-  const [name, setName] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>([]);
   const [newItem, setNewItem] = useState('');
-  const [showInput, setShowInput] = useState(false);
-
-  const inputRef = useRef<TextInput | null>(null);
+  const [showItemInput, setShowItemInput] = useState(false);
+  const itemInputRef = useRef<TextInput | null>(null);
   const listRef = useRef<FlatList<string>>(null);
+
+  const [tags, setTags] = useState<string[]>([]);
+  const [selectedTag, setSelectedTag] = useState<number | null>(null);
+  const [editingTag, setEditingTag] = useState<number | null>(null);
+  const [editingTagText, setEditingTagText] = useState('');
+
+  // Nombre de la lista para el header
+  const [listName, setListName] = useState<string>('');
 
   useEffect(() => {
     (async () => {
@@ -48,33 +52,29 @@ export default function ListDetailScreen() {
         const { lists } = await res.json();
         const lst = lists.find((l) => l.listId === listId);
         if (!lst) return router.back();
-        setName(lst.name);
-        setTags(lst.tags);
         setItems(lst.items);
+        setTags(lst.tags);
+        setListName(lst.name);
       } catch {
         Alert.alert('Error', 'No se pudo cargar la lista');
       }
     })();
   }, [listId]);
 
-  const handleAdd = async () => {
+  const handleAddItem = async () => {
     if (!newItem.trim()) return;
     try {
       const res = await fetch(`${API_BASE}/lists/items`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: 'user123',
-          listId,
-          newItem: newItem.trim(),
-        }),
+        body: JSON.stringify({ userId: 'user123', listId, newItem: newItem.trim() }),
       });
       if (!res.ok) throw new Error();
       const { items: updated } = await res.json();
       setItems(updated);
       setNewItem('');
+      setShowItemInput(false);
       listRef.current?.scrollToEnd({ animated: true });
-      setShowInput(false);
     } catch {
       Alert.alert('Error', 'No se pudo agregar el elemento');
     }
@@ -85,11 +85,7 @@ export default function ListDetailScreen() {
       const res = await fetch(`${API_BASE}/lists/items`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: 'user123',
-          listId,
-          item: itemToDelete,
-        }),
+        body: JSON.stringify({ userId: 'user123', listId, item: itemToDelete }),
       });
       if (!res.ok) throw new Error();
       const { items: updated } = await res.json();
@@ -97,6 +93,37 @@ export default function ListDetailScreen() {
     } catch {
       Alert.alert('Error', 'No se pudo eliminar el elemento');
     }
+  };
+
+  const selectTag = (idx: number) => {
+    setSelectedTag(selectedTag === idx ? null : idx);
+    setEditingTag(null);
+  };
+  const startEditingTag = (idx: number) => {
+    setEditingTag(idx);
+    setEditingTagText(tags[idx]);
+  };
+  const saveTag = (idx: number) => {
+    const text = editingTagText.trim();
+    setTags((prev) => {
+      const copy = [...prev];
+      if (text) copy[idx] = text;
+      else copy.splice(idx, 1);
+      return copy;
+    });
+    setEditingTag(null);
+    setSelectedTag(null);
+    setEditingTagText('');
+  };
+  const removeTag = (idx: number) => {
+    setTags((prev) => prev.filter((_, i) => i !== idx));
+    setSelectedTag(null);
+  };
+  const addTag = () => {
+    setTags((prev) => [...prev, '']);
+    const newIdx = tags.length;
+    setEditingTag(newIdx);
+    setEditingTagText('');
   };
 
   const renderItem: ListRenderItem<string> = ({ item }) => (
@@ -114,35 +141,79 @@ export default function ListDetailScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: name || `Lista ${listId}` }} />
+      <Stack.Screen options={{ title: listName || `Lista ${listId}` }} />
+
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.select({ ios: 100, android: 0 })}
       >
         <Box sx={{ flex: 1, bg, px: '$4', pt: '$4' }}>
-          {/* Etiquetas */}
-          <HStack sx={{ mb: '$3', flexWrap: 'wrap', gap: '$2' }}>
-            {tags.map((t) => (
-              <Box
-                key={t}
-                sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}
+          <Text sx={{ color: '$white', fontSize: '$md', fontWeight: 'bold', mb: '$2' }}>
+            Etiquetas
+          </Text>
+          <HStack sx={{ mb: '$4', flexWrap: 'wrap', gap: '$2' }}>
+            {tags.map((tag, idx) =>
+              editingTag === idx ? (
+                <TextInput
+                  key={idx}
+                  style={styles.chipInput}
+                  value={editingTagText}
+                  onChangeText={setEditingTagText}
+                  onSubmitEditing={() => saveTag(idx)}
+                  onBlur={() => saveTag(idx)}
+                  placeholder="Etiqueta"
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  autoFocus
+                />
+              ) : (
+                <HStack
+                  key={idx}
+                  alignItems="center"
+                  sx={{
+                    borderWidth: 1,
+                    borderColor: '$white',
+                    borderRadius: '$full',
+                    minWidth: 50,
+                    height: '$6',
+                    px: '$3',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Pressable onPress={() => selectTag(idx)}>
+                    <Text sx={{ color: '$white', fontSize: '$xs' }}>{tag}</Text>
+                  </Pressable>
+                  {selectedTag === idx && (
+                    <HStack sx={{ ml: '$1', gap: '$1' }}>
+                      <Pressable onPress={() => startEditingTag(idx)}>
+                        <Icon as={MaterialIcons} name="edit" size="xs" color="$white" />
+                      </Pressable>
+                      <Pressable onPress={() => removeTag(idx)}>
+                        <Icon as={MaterialIcons} name="close" size="xs" color="$white" />
+                      </Pressable>
+                    </HStack>
+                  )}
+                </HStack>
+              )
+            )}
+            <Pressable onPress={addTag}>
+              <HStack
+                alignItems="center"
+                justifyContent="center"
+                sx={{
+                  width: '$6',
+                  height: '$6',
+                  borderRadius: '$full',
+                  borderWidth: 1,
+                  borderColor: '$white',
+                }}
               >
-                <Text sx={{ color: '$white', fontSize: '$xs' }}>{t}</Text>
-              </Box>
-            ))}
+                <Icon as={MaterialIcons} name="add" size="xs" color="$white" />
+              </HStack>
+            </Pressable>
           </HStack>
 
-          {/* Wrapper con altura máxima del 80%, borde blanco */}
-          <Box
-            style={{
-              maxHeight: MAX_LIST_HEIGHT,
-              borderWidth: 1,
-              borderColor: '#FFFFFF',
-              borderRadius: 8,
-              overflow: 'hidden',
-            }}
-          >
+          <Box style={{ maxHeight: MAX_LIST_HEIGHT, borderRadius: 8, overflow: 'hidden' }}>
             <FlatList
               ref={listRef}
               data={items}
@@ -154,39 +225,27 @@ export default function ListDetailScreen() {
             />
           </Box>
 
-          {/* TextInput debajo de la lista, sin borde */}
-          {showInput && (
+          {showItemInput && (
             <Box sx={{ width: '100%', px: '$4', mt: '$3' }}>
-              <Input sx={{ bg: 'transparent', borderWidth: 0 }}>
-                <InputField
-                  ref={inputRef}
-                  value={newItem}
-                  onChangeText={setNewItem}
-                  placeholder="Nuevo elemento"
-                  blurOnSubmit={false}
-                  returnKeyType="done"
-                  onSubmitEditing={handleAdd}
-                  sx={{
-                    color: '$white',
-                    bg: '$gray800',
-                    borderWidth: 0,
-                    borderRadius: '$full',
-                    px: '$4',
-                    py: '$2',
-                  }}
-                />
-              </Input>
+              <TextInput
+                style={styles.newItemInput}
+                ref={itemInputRef}
+                value={newItem}
+                onChangeText={setNewItem}
+                onSubmitEditing={handleAddItem}
+                placeholder="Nuevo elemento"
+                placeholderTextColor="rgba(255,255,255,0.6)"
+              />
             </Box>
           )}
 
-          {/* Botón flotante */}
           <Pressable
             onPress={() => {
-              if (!showInput) {
-                setShowInput(true);
-                setTimeout(() => inputRef.current?.focus(), 50);
+              if (!showItemInput) {
+                setShowItemInput(true);
+                setTimeout(() => itemInputRef.current?.focus(), 50);
               } else {
-                handleAdd();
+                handleAddItem();
               }
             }}
             sx={{
@@ -199,10 +258,6 @@ export default function ListDetailScreen() {
               borderRadius: '$full',
               justifyContent: 'center',
               alignItems: 'center',
-              shadowColor: '$black',
-              shadowOpacity: 0.3,
-              shadowOffset: { width: 0, height: 2 },
-              shadowRadius: 4,
             }}
           >
             <Icon as={MaterialIcons} name="add" size="xl" color="$white" />
@@ -212,3 +267,29 @@ export default function ListDetailScreen() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  chipInput: {
+    backgroundColor: '#gray700',
+    borderWidth: 1,
+    borderColor: '#fff',
+    borderRadius: 999,
+    minWidth: 50,
+    height: 32,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    color: '#fff',
+    fontSize: 12,
+    textAlignVertical: 'center',
+    marginRight: 4,
+  },
+  newItemInput: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: '#fff',
+  },
+});
