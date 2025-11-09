@@ -1,6 +1,7 @@
 import { InputType, Message } from '@/types/message';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Button,
@@ -17,7 +18,7 @@ import {
   useColorScheme,
 } from 'react-native';
 
-const API_BASE = 'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev/messages';
+const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages';
 
 if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -33,7 +34,7 @@ export default function ThoughtsScreen() {
   const colorScheme = useColorScheme();
 
   const [usedAI, setUsedAI] = useState<boolean | null>(null);
-  const [classification, setClassification] = useState('');
+  const [tags, setTags] = useState('');
   const [inputType, setInputType] = useState<InputType>('text');
   const userId = 'user123';
 
@@ -92,7 +93,10 @@ export default function ThoughtsScreen() {
       params.append('userId', userId);
 
       if (applyFilters) {
-        if (classification.trim()) params.append('classification', classification.toLowerCase());
+        // Usar 'tagNames' para búsqueda correcta por tags
+        // Nota: El backend debe soportar búsqueda parcial (LIKE %tag%)
+        // Si solo soporta coincidencia exacta, usar tagIds con UUID
+        if (tags.trim()) params.append('tagNames', tags.trim());
         if (inputType) params.append('inputType', inputType.toLowerCase());
         if (dateFrom) params.append('dateFrom', toISOStringWithZ(dateFrom));
         if (dateTo) params.append('dateTo', toISOStringWithZ(dateTo));
@@ -101,19 +105,36 @@ export default function ThoughtsScreen() {
         if (usedAI !== null) params.append('usedAI', usedAI.toString());
       }
 
-      const res = await fetch(`${API_BASE}?${params.toString()}`);
+      const url = `${API_BASE}?${params.toString()}`;
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ Error response:', errorText);
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
+      
       const data = await res.json();
-      setMessages(data.messages || []);
+      const messages = Array.isArray(data) ? data : (data.messages || []);
+      setMessages(messages);
     } catch (err) {
-      console.error('Error fetching messages:', err);
+      console.error('❌ Error fetching messages:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  // Cargar mensajes al montar el componente
   useEffect(() => {
     fetchMessages(false);
   }, []);
+
+  // Recargar mensajes cada vez que el usuario regresa a esta pantalla
+  useFocusEffect(
+    useCallback(() => {
+      fetchMessages(false);
+    }, [])
+  );
 
   const toggleInputType = () => {
     setInputType((prev) => (prev === 'audio' ? 'text' : 'audio'));
@@ -146,11 +167,16 @@ export default function ThoughtsScreen() {
       <Text style={[styles.title, { color: theme.text }]}>Pensamientos</Text>
 
       <View style={styles.filters}>
-        <Text style={[styles.label, { color: theme.text }]}>Clasificación</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <Text style={[styles.label, { color: theme.text }]}>Etiquetas</Text>
+          <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>
+            {messages.length} {messages.length === 1 ? 'pensamiento' : 'pensamientos'}
+          </Text>
+        </View>
         <TextInput
-          placeholder="Clasificación"
-          value={classification}
-          onChangeText={setClassification}
+          placeholder="Ej: trabajo, urgente, reunión"
+          value={tags}
+          onChangeText={setTags}
           style={[styles.input, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
           placeholderTextColor={theme.text}
         />
@@ -212,18 +238,34 @@ export default function ThoughtsScreen() {
           data={messages}
           keyExtractor={(item) => item.messageId}
           contentContainerStyle={{ paddingBottom: 50 }}
-          renderItem={({ item }) => (
-            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <Text style={{ color: theme.text }}>Tipo: {item.inputType}</Text>
-              <Text style={{ color: theme.text }}>Contenido: {item.originalContent}</Text>
-              <Text style={{ color: theme.text }}>Clasificación: {item.classification}</Text>
-              <Text style={{ color: theme.text }}>Usó IA: {item.usedAI ? 'Sí' : 'No'}</Text>
-              <Text style={{ color: theme.text }}>Creado: {new Date(item.timestamp).toLocaleString()}</Text>
-              {item.lastUpdated && (
-                <Text style={{ color: theme.text }}>Actualizado: {new Date(item.lastUpdated).toLocaleString()}</Text>
-              )}
-            </View>
-          )}
+          renderItem={({ item }) => {
+            // El nuevo backend usa 'content', el viejo usaba 'originalContent'
+            const content = item.content || item.originalContent || 'Sin contenido';
+            
+            return (
+              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text style={{ color: theme.text }}>Tipo: {item.inputType}</Text>
+                <Text style={{ color: theme.text }}>Contenido: {content}</Text>
+                {item.tagNames && item.tagNames.length > 0 && (
+                  <Text style={{ color: theme.text }}>Etiquetas: {item.tagNames.join(', ')}</Text>
+                )}
+                {item.tagSource && (
+                  <Text style={{ color: theme.text, fontSize: 12, fontStyle: 'italic' }}>Origen: {item.tagSource}</Text>
+                )}
+                {/* Backward compatibility */}
+                {!item.tagNames && item.classification && (
+                  <Text style={{ color: theme.text }}>Clasificación: {item.classification}</Text>
+                )}
+                <Text style={{ color: theme.text }}>Usó IA: {item.usedAI ? 'Sí' : 'No'}</Text>
+                {(item.timestamp || item.createdAt) && (
+                  <Text style={{ color: theme.text }}>Creado: {new Date(item.timestamp || item.createdAt || '').toLocaleString()}</Text>
+                )}
+                {(item.lastUpdated || item.updatedAt) && (
+                  <Text style={{ color: theme.text }}>Actualizado: {new Date(item.lastUpdated || item.updatedAt || '').toLocaleString()}</Text>
+                )}
+              </View>
+            );
+          }}
         />
       )}
     </View>

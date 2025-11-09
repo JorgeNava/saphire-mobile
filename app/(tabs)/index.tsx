@@ -32,13 +32,13 @@ interface Message {
   sentAt?: number;
 }
 
-// Endpoints para texto y audio
+// Endpoints correctos para mensajes
 const TEXT_ENDPOINT =
-  'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev/text';
+  'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages';
 const AUDIO_UPLOAD_ENDPOINT =
-  'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev/generate-upload-url';
+  'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages/upload-url';
 const AUDIO_NOTIFY_ENDPOINT =
-  'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev/audio';
+  'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages/audio';
 
 // Formatea timestamp como HH:mm
 const formatTime = (timestamp: number) => {
@@ -62,8 +62,8 @@ export default function ChatScreen() {
     { id: '1', text: 'Hola, Jorge 👋', fromMe: false },
   ]);
   const [text, setText] = useState('');
-  const [classification, setClassification] = useState('');
-  const [showClassificationInput, setShowClassificationInput] = useState(false);
+  const [tags, setTags] = useState('');
+  const [showTagsInput, setShowTagsInput] = useState(false);
   const [sendingText, setSendingText] = useState(false);
   const [sendingAudio, setSendingAudio] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -79,15 +79,33 @@ export default function ChatScreen() {
       ...prev,
     ]);
     setText('');
-    setClassification('');
-    setShowClassificationInput(false);
+    setTags('');
+    setShowTagsInput(false);
     setSendingText(true);
     try {
-      await fetch(TEXT_ENDPOINT, {
+      const payload = {
+        userId: 'user123',
+        content: text,
+        inputType: 'text',
+        sender: 'user123',
+        ...(tags.trim() && {
+          tagNames: tags.split(',').map(t => t.trim()).filter(t => t),
+          tagSource: 'Manual'
+        })
+      };
+      const response = await fetch(TEXT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: 'user123', text, classification: classification.trim() }),
+        body: JSON.stringify(payload),
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error response:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
+      const result = await response.json();
       setMessages(prev =>
         prev.map(m =>
           m.id === id ? { ...m, status: 'sent', sentAt: Date.now() } : m
@@ -112,8 +130,7 @@ export default function ChatScreen() {
       await rec.startAsync();
       setRecording(rec);
       setMicPressed(true);
-      setClassification('');
-      setShowClassificationInput(false);
+      // No limpiar tags aquí - se limpiarán después de enviar exitosamente
     } catch (error) {
       console.error('Error al iniciar grabación:', error);
     }
@@ -135,7 +152,18 @@ export default function ChatScreen() {
       ]);
       setRecording(null);
 
-      const uploadResp = await fetch(AUDIO_UPLOAD_ENDPOINT, { method: 'POST' });
+      const uploadResp = await fetch(AUDIO_UPLOAD_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: 'user123' })
+      });
+      
+      if (!uploadResp.ok) {
+        const errorText = await uploadResp.text();
+        console.error('❌ Error al obtener URL:', errorText);
+        throw new Error(`HTTP ${uploadResp.status}: ${errorText}`);
+      }
+      
       const { uploadUrl, s3Key } = await uploadResp.json();
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       const buffer = Buffer.from(base64, 'base64');
@@ -144,19 +172,39 @@ export default function ChatScreen() {
         headers: { 'Content-Type': 'audio/mpeg' },
         body: buffer,
       });
+      const audioPayload = {
+        userId: 'user123',
+        s3Key,
+        sender: 'user123',
+        ...(tags.trim() && {
+          tagNames: tags.split(',').map(t => t.trim()).filter(t => t),
+          tagSource: 'Manual'
+        })
+      };
       const notifyResp = await fetch(AUDIO_NOTIFY_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: 'user123', s3Key, classification: classification.trim() }),
+        body: JSON.stringify(audioPayload),
       });
-      const { transcription } = await notifyResp.json();
+      
+      if (!notifyResp.ok) {
+        const errorText = await notifyResp.text();
+        console.error('❌ Error en audio:', errorText);
+        throw new Error(`HTTP ${notifyResp.status}: ${errorText}`);
+      }
+      
+      const audioResult = await notifyResp.json();
+      const { transcription } = audioResult;
       setMessages(prev =>
         prev.map(m =>
           m.id === placeholderId
-            ? { id: placeholderId, text: transcription, fromMe: true, status: 'sent', sentAt: Date.now() }
+            ? { ...m, text: transcription || 'Audio enviado', status: 'sent', sentAt: Date.now() }
             : m
         )
       );
+      // Limpiar tags después de enviar exitosamente
+      setTags('');
+      setShowTagsInput(false);
     } catch (err) {
       console.error('Error al procesar audio:', err);
     } finally {
@@ -164,9 +212,9 @@ export default function ChatScreen() {
     }
   };
 
-  const toggleClassification = () => {
+  const toggleTags = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setShowClassificationInput(!showClassificationInput);
+    setShowTagsInput(!showTagsInput);
   };
 
   const handleMicPressIn = (e: GestureResponderEvent) => {
@@ -216,12 +264,12 @@ export default function ChatScreen() {
           renderItem={renderItem}
         />
 
-        <Pressable onPress={toggleClassification} sx={{ mb: '$2' }}>
+        <Pressable onPress={toggleTags} sx={{ mb: '$2' }}>
           <Text sx={{ color: theme.text, ml: '$2' }}>
-            Etiquetas {showClassificationInput ? '▲' : '▼'}
+            Etiquetas {showTagsInput ? '▲' : '▼'}
           </Text>
         </Pressable>
-        {showClassificationInput && (
+        {showTagsInput && (
           <Input sx={{
             bg: '$gray800',
             borderRadius: '$md',
@@ -230,9 +278,9 @@ export default function ChatScreen() {
             mb: '$3'
           }}>
             <InputField
-              value={classification}
-              onChangeText={setClassification}
-              placeholder="Añade etiquetas a tu mensaje... (ej: tareas, ideas, recordatorios)"
+              value={tags}
+              onChangeText={setTags}
+              placeholder="Añade etiquetas a tu mensaje... (ej: trabajo, urgente, reunión)"
               sx={{ color: '$white' }}
             />
           </Input>

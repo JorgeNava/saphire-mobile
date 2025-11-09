@@ -10,8 +10,8 @@ import {
   Text,
   VStack,
 } from '@gluestack-ui/themed';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -23,15 +23,20 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
-// Ajustamos interfaz para aceptar ambos props 'listId' o 'id' en respuesta API
+// Interfaz actualizada para manejar tags del backend
 interface List {
   listId: string;
   name: string;
-  tags: string[];
+  tagIds: string[];      // UUIDs de los tags
+  tagNames: string[];    // Nombres de los tags (para mostrar)
   items: string[];
+  description?: string;
+  tagSource?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-const API_BASE = 'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev';
+const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 
 export default function ListsScreen() {
   const router = useRouter();
@@ -49,19 +54,40 @@ export default function ListsScreen() {
     fetchLists();
   }, []);
 
+  // Recargar listas cuando la pantalla se enfoca (al regresar de detalle)
+  useFocusEffect(
+    useCallback(() => {
+      fetchLists();
+    }, [])
+  );
+
   async function fetchLists() {
     try {
       const res = await fetch(`${API_BASE}/lists?userId=user123`);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ Error response:', errorText);
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
+      
       const data = await res.json();
-      // Mapeamos respuesta para normalizar field 'id' a 'listId'
-      const parsed: List[] = (data.lists || []).map((l: any) => ({
+      const listsArray = Array.isArray(data) ? data : (data.lists || []);
+      
+      const parsed: List[] = listsArray.map((l: any) => ({
         listId: l.listId ?? l.id,
         name: l.name,
-        tags: l.tags || [],
+        tagIds: l.tagIds || [],
+        tagNames: l.tagNames || l.tags || [],
         items: l.items || [],
+        description: l.description,
+        tagSource: l.tagSource,
+        createdAt: l.createdAt,
+        updatedAt: l.updatedAt,
       }));
       setLists(parsed);
-    } catch {
+    } catch (err) {
+      console.error('❌ Error fetching lists:', err);
       Alert.alert('Error', 'No se pudo cargar las listas');
     }
   }
@@ -118,11 +144,15 @@ export default function ListsScreen() {
           <VStack>
             <Text sx={{ color: '$white', fontSize: '$lg' }}>{item.name}</Text>
             <HStack sx={{ flexWrap: 'wrap', gap: '$1', mt: '$1' }}>
-              {item.tags.map(t => (
-                <Box key={t} sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}>
-                  <Text sx={{ color: '$white', fontSize: '$xs' }}>{t}</Text>
-                </Box>
-              ))}
+              {item.tagNames && item.tagNames.length > 0 ? (
+                item.tagNames.map((tagName, idx) => (
+                  <Box key={item.tagIds[idx] || tagName} sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}>
+                    <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
+                  </Box>
+                ))
+              ) : (
+                <Text sx={{ color: '$gray500', fontSize: '$xs' }}>Sin etiquetas</Text>
+              )}
             </HStack>
           </VStack>
         </Pressable>
@@ -162,9 +192,14 @@ export default function ListsScreen() {
 
   return (
     <Box sx={{ flex: 1, bg: themeBg, px: '$4', pt: '$4' }}>
-      <Text sx={{ color: '$white', fontSize: 24, fontWeight: 'bold', mb: '$3', mt: 40 }}>
-        Listas
-      </Text>
+      <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$3', mt: 40 }}>
+        <Text sx={{ color: '$white', fontSize: 24, fontWeight: 'bold' }}>
+          Listas
+        </Text>
+        <Text sx={{ color: '$white', fontSize: 16, fontWeight: '600' }}>
+          {lists.length} {lists.length === 1 ? 'lista' : 'listas'}
+        </Text>
+      </HStack>
 
       <FlatList
         data={lists}
