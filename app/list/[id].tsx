@@ -7,7 +7,7 @@ import {
   Text,
 } from '@gluestack-ui/themed';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView,
   ListRenderItem,
   Platform,
+  ScrollView,
   StyleSheet,
   TextInput,
   useColorScheme,
@@ -22,7 +23,7 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 const API_BASE =
-  'https://vc3vjicxs9.execute-api.us-east-1.amazonaws.com/dev';
+  'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const MAX_LIST_HEIGHT = Dimensions.get('window').height * 0.8;
 
 export default function ListDetailScreen() {
@@ -31,16 +32,20 @@ export default function ListDetailScreen() {
   const colorScheme = useColorScheme();
   const bg = colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC';
 
-  const [items, setItems] = useState<string[]>([]);
+  const [items, setItems] = useState<Array<{itemId?: string; content: string} | string>>([]);
   const [newItem, setNewItem] = useState('');
   const [showItemInput, setShowItemInput] = useState(false);
   const itemInputRef = useRef<TextInput | null>(null);
-  const listRef = useRef<FlatList<string>>(null);
+  const listRef = useRef<FlatList<any>>(null);
 
-  const [tags, setTags] = useState<string[]>([]);
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [tagNames, setTagNames] = useState<string[]>([]);
   const [selectedTag, setSelectedTag] = useState<number | null>(null);
-  const [editingTag, setEditingTag] = useState<number | null>(null);
-  const [editingTagText, setEditingTagText] = useState('');
+  const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
+  const [showTagPicker, setShowTagPicker] = useState(false);
+  
+  // Datos completos de la lista para actualizaciones
+  const [fullListData, setFullListData] = useState<any>(null);
 
   // Nombre de la lista para el header
   const [listName, setListName] = useState<string>('');
@@ -48,14 +53,36 @@ export default function ListDetailScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/lists?userId=user123`);
-        const { lists } = await res.json();
-        const lst = lists.find((l) => l.listId === listId);
-        if (!lst) return router.back();
-        setItems(lst.items);
-        setTags(lst.tags);
-        setListName(lst.name);
-      } catch {
+        const url = `${API_BASE}/lists?userId=user123`;
+        const res = await fetch(url);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('❌ Error response:', errorText);
+          throw new Error(`HTTP ${res.status}: ${errorText}`);
+        }
+        
+        const data = await res.json();
+        const listsArray = Array.isArray(data) ? data : (data.lists || []);
+        const lst = listsArray.find((l: any) => l.listId === listId || l.id === listId);
+        
+        if (!lst) {
+          Alert.alert('Error', 'Lista no encontrada');
+          return router.back();
+        }
+        
+        // Normalizar items: pueden ser strings o objetos {itemId, content}
+        const normalizedItems = (lst.items || []).map((item: any) => 
+          typeof item === 'string' ? item : item.content
+        );
+        setItems(normalizedItems);
+        setTagIds(lst.tagIds || []);
+        setTagNames(lst.tagNames || lst.tags || []);
+        setListName(lst.name || '');
+        setFullListData(lst);
+        loadAvailableTags();
+      } catch (err) {
+        console.error('❌ Error loading list:', err);
         Alert.alert('Error', 'No se pudo cargar la lista');
       }
     })();
@@ -95,49 +122,122 @@ export default function ListDetailScreen() {
     }
   };
 
-  const selectTag = (idx: number) => {
-    setSelectedTag(selectedTag === idx ? null : idx);
-    setEditingTag(null);
-  };
-  const startEditingTag = (idx: number) => {
-    setEditingTag(idx);
-    setEditingTagText(tags[idx]);
-  };
-  const saveTag = (idx: number) => {
-    const text = editingTagText.trim();
-    setTags((prev) => {
-      const copy = [...prev];
-      if (text) copy[idx] = text;
-      else copy.splice(idx, 1);
-      return copy;
-    });
-    setEditingTag(null);
-    setSelectedTag(null);
-    setEditingTagText('');
-  };
-  const removeTag = (idx: number) => {
-    setTags((prev) => prev.filter((_, i) => i !== idx));
-    setSelectedTag(null);
-  };
-  const addTag = () => {
-    setTags((prev) => [...prev, '']);
-    const newIdx = tags.length;
-    setEditingTag(newIdx);
-    setEditingTagText('');
+  const loadAvailableTags = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/tags?userId=user123`);
+      if (res.ok) {
+        const tags = await res.json();
+        setAvailableTags(tags);
+      }
+    } catch (err) {
+      console.error('Error loading tags:', err);
+    }
   };
 
-  const renderItem: ListRenderItem<string> = ({ item }) => (
+  const selectTag = (idx: number) => {
+    setSelectedTag(selectedTag === idx ? null : idx);
+  };
+
+  const removeTag = async (idx: number) => {
+    if (!fullListData) return;
+    
+    try {
+      const updatedTagIds = [...tagIds];
+      const updatedTagNames = [...tagNames];
+      
+      updatedTagIds.splice(idx, 1);
+      updatedTagNames.splice(idx, 1);
+      
+      const updatedList = {
+        ...fullListData,
+        tagIds: updatedTagIds,
+        tagNames: updatedTagNames,
+        updatedAt: new Date().toISOString(),
+        lastModifiedBy: 'user123'
+      };
+      
+      const res = await fetch(`${API_BASE}/lists/${listId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedList)
+      });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ Error removing tag:', errorText);
+        throw new Error(errorText);
+      }
+      
+      const result = await res.json();
+      setTagIds(result.tagIds || []);
+      setTagNames(result.tagNames || []);
+      setFullListData(result);
+      setSelectedTag(null);
+    } catch (err) {
+      console.error('❌ Error:', err);
+      Alert.alert('Error', 'No se pudo remover el tag');
+    }
+  };
+
+  const addTagToList = async (tag: {tagId: string; name: string}) => {
+    if (!fullListData) {
+      Alert.alert('Error', 'Datos de lista no disponibles');
+      return;
+    }
+    
+    if (tagIds.includes(tag.tagId)) {
+      Alert.alert('Info', 'Este tag ya está en la lista');
+      return;
+    }
+    
+    try {
+      const updatedList = {
+        ...fullListData,
+        tagIds: [...tagIds, tag.tagId],
+        tagNames: [...tagNames, tag.name],
+        tagSource: 'Manual',
+        updatedAt: new Date().toISOString(),
+        lastModifiedBy: 'user123'
+      };
+      
+      const res = await fetch(`${API_BASE}/lists/${listId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedList)
+      });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ Error adding tag:', errorText);
+        throw new Error(errorText);
+      }
+      
+      const result = await res.json();
+      setTagIds(result.tagIds || []);
+      setTagNames(result.tagNames || []);
+      setFullListData(result);
+      setShowTagPicker(false);
+    } catch (err) {
+      console.error('❌ Error:', err);
+      Alert.alert('Error', 'No se pudo agregar el tag');
+    }
+  };
+
+  const renderItem: ListRenderItem<{itemId?: string; content: string} | string> = ({ item }) => {
+    const displayText = typeof item === 'string' ? item : item.content;
+    return (
     <HStack
       justifyContent="space-between"
       alignItems="center"
       sx={{ mb: '$2', px: '$3', py: '$2', bg: '$gray700', borderRadius: '$md' }}
     >
-      <Text sx={{ color: '$white' }}>{item}</Text>
-      <Pressable onPress={() => deleteItem(item)}>
+      <Text sx={{ color: '$white' }}>{displayText}</Text>
+      <Pressable onPress={() => deleteItem(displayText)}>
         <Icon as={MaterialIcons} name="delete" size="sm" color="$red500" />
       </Pressable>
     </HStack>
   );
+  };
 
   return (
     <>
@@ -149,30 +249,22 @@ export default function ListDetailScreen() {
         keyboardVerticalOffset={Platform.select({ ios: 100, android: 0 })}
       >
         <Box sx={{ flex: 1, bg, px: '$4', pt: '$4' }}>
-          <Text sx={{ color: '$white', fontSize: '$md', fontWeight: 'bold', mb: '$2' }}>
-            Etiquetas
-          </Text>
+          <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$2' }}>
+            <Text sx={{ color: '$white', fontSize: '$md', fontWeight: 'bold' }}>
+              Etiquetas
+            </Text>
+            <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '600' }}>
+              {items.length} {items.length === 1 ? 'elemento' : 'elementos'}
+            </Text>
+          </HStack>
           <HStack sx={{ mb: '$4', flexWrap: 'wrap', gap: '$2' }}>
-            {tags.map((tag, idx) =>
-              editingTag === idx ? (
-                <TextInput
-                  key={idx}
-                  style={styles.chipInput}
-                  value={editingTagText}
-                  onChangeText={setEditingTagText}
-                  onSubmitEditing={() => saveTag(idx)}
-                  onBlur={() => saveTag(idx)}
-                  placeholder="Etiqueta"
-                  placeholderTextColor="rgba(255,255,255,0.6)"
-                  autoFocus
-                />
-              ) : (
+            {tagNames.length > 0 ? (
+              tagNames.map((tagName, idx) => (
                 <HStack
-                  key={idx}
+                  key={tagIds[idx] || idx}
                   alignItems="center"
                   sx={{
-                    borderWidth: 1,
-                    borderColor: '$white',
+                    bg: '$gray600',
                     borderRadius: '$full',
                     minWidth: 50,
                     height: '$6',
@@ -181,22 +273,19 @@ export default function ListDetailScreen() {
                   }}
                 >
                   <Pressable onPress={() => selectTag(idx)}>
-                    <Text sx={{ color: '$white', fontSize: '$xs' }}>{tag}</Text>
+                    <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
                   </Pressable>
                   {selectedTag === idx && (
-                    <HStack sx={{ ml: '$1', gap: '$1' }}>
-                      <Pressable onPress={() => startEditingTag(idx)}>
-                        <Icon as={MaterialIcons} name="edit" size="xs" color="$white" />
-                      </Pressable>
-                      <Pressable onPress={() => removeTag(idx)}>
-                        <Icon as={MaterialIcons} name="close" size="xs" color="$white" />
-                      </Pressable>
-                    </HStack>
+                    <Pressable onPress={() => removeTag(idx)} sx={{ ml: '$1' }}>
+                      <Icon as={MaterialIcons} name="close" size="xs" color="$white" />
+                    </Pressable>
                   )}
                 </HStack>
-              )
+              ))
+            ) : (
+              <Text sx={{ color: '$gray500', fontSize: '$xs' }}>Sin etiquetas</Text>
             )}
-            <Pressable onPress={addTag}>
+            <Pressable onPress={() => setShowTagPicker(!showTagPicker)}>
               <HStack
                 alignItems="center"
                 justifyContent="center"
@@ -206,12 +295,51 @@ export default function ListDetailScreen() {
                   borderRadius: '$full',
                   borderWidth: 1,
                   borderColor: '$white',
+                  bg: showTagPicker ? '$blue500' : 'transparent',
                 }}
               >
                 <Icon as={MaterialIcons} name="add" size="xs" color="$white" />
               </HStack>
             </Pressable>
           </HStack>
+
+          {showTagPicker && (() => {
+            const filteredTags = availableTags.filter(t => !tagIds.includes(t.tagId));
+            return (
+              <Box sx={{ mb: '$4', bg: '$gray700', p: '$3', borderRadius: '$md' }}>
+                <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold', mb: '$2' }}>
+                  Agregar etiqueta:
+                </Text>
+                <ScrollView 
+                  style={{ maxHeight: 150 }}
+                  showsVerticalScrollIndicator={true}
+                >
+                  <HStack sx={{ flexWrap: 'wrap', gap: '$2' }}>
+                    {filteredTags.map(tag => (
+                      <Pressable
+                        key={tag.tagId}
+                        onPress={() => addTagToList(tag)}
+                        sx={{
+                          bg: '$blue500',
+                          px: '$3',
+                          py: '$2',
+                          borderRadius: '$full',
+                          mb: '$1',
+                        }}
+                      >
+                        <Text sx={{ color: '$white', fontSize: '$xs' }}>+ {tag.name}</Text>
+                      </Pressable>
+                    ))}
+                  </HStack>
+                  {filteredTags.length === 0 && (
+                    <Text sx={{ color: '$gray400', fontSize: '$xs' }}>
+                      No hay más tags disponibles
+                    </Text>
+                  )}
+                </ScrollView>
+              </Box>
+            );
+          })()}
 
           <Box style={{ maxHeight: MAX_LIST_HEIGHT, borderRadius: 8, overflow: 'hidden' }}>
             <FlatList
