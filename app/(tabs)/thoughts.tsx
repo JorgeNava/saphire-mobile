@@ -139,11 +139,11 @@ export default function ThoughtsScreen() {
     setPickerVisible({ field: '', show: false });
   };
 
-  const fetchMessages = async (applyFilters = true, resetPagination = false, customLastKey?: string | null) => {
+  const fetchMessages = async (applyFilters = true, resetPagination = false, customLastKey?: string | null, forceRefresh = false) => {
     setLoading(true);
     try {
-      // IMPORTANTE: NO usar caché cuando hay filtros activos
-      if (!applyFilters && !checkActiveFilters()) {
+      // IMPORTANTE: NO usar caché cuando hay filtros activos O cuando es refresh manual
+      if (!applyFilters && !checkActiveFilters() && !forceRefresh) {
         const cachedThoughts = await cacheService.get('cache_thoughts');
         if (cachedThoughts && Array.isArray(cachedThoughts)) {
           setMessages(cachedThoughts as Message[]);
@@ -174,6 +174,7 @@ export default function ThoughtsScreen() {
         if (tags.trim()) {
           // Buscar por nombres de tags (el backend debe soportar esto)
           params.append('tagNames', tags.trim());
+          console.log('🏷️ Filtrando por tags:', tags.trim());
         }
         if (dateFrom) params.append('createdAt', toISOStringWithZ(dateFrom));
         // Nota: Thoughts no tiene inputType ni usedAI
@@ -181,17 +182,43 @@ export default function ThoughtsScreen() {
 
       const url = `${THOUGHTS_ENDPOINT}?${params.toString()}`;
       console.log('🔍 Fetching:', url);
+      console.log('📋 Parámetros de filtro:', {
+        tagNames: tags.trim() || 'ninguno',
+        dateFrom: dateFrom || 'ninguno'
+      });
       const res = await fetch(url);
 
       if (!res.ok) {
         const errorText = await res.text();
         console.error('❌ Error response:', errorText);
+        console.error('❌ Status code:', res.status);
+        console.error('❌ URL que falló:', url);
         throw new Error(`HTTP ${res.status}: ${errorText}`);
       }
       
       const data = await res.json();
+      console.log('📦 Respuesta del backend:', {
+        totalItems: data.items?.length || 0,
+        hasMore: data.hasMore,
+        lastKey: data.lastKey ? 'presente' : 'null',
+        count: data.count
+      });
+      
       // NUEVO: API ahora retorna objeto paginado con { items, count, hasMore, lastKey }
       const thoughtsArray = data.items || [];
+      
+      // Verificar si el filtrado funcionó
+      if (tags.trim() && thoughtsArray.length > 0) {
+        console.log('✅ Filtrado aplicado. Primeros 3 resultados:', 
+          thoughtsArray.slice(0, 3).map((t: any) => ({
+            content: t.content?.substring(0, 50),
+            tags: t.tagNames
+          }))
+        );
+      } else if (tags.trim() && thoughtsArray.length === 0) {
+        console.warn('⚠️ Filtrado aplicado pero sin resultados. Posible problema del backend.');
+      }
+      
       setMessages(thoughtsArray);
       
       // Actualizar estado de paginación
@@ -423,7 +450,8 @@ export default function ThoughtsScreen() {
     setCurrentPage(1);
     setLastKey(null);
     setPageHistory([null]);
-    await fetchMessages(true, true);
+    console.log('🔄 Pull-to-refresh: Cargando desde backend...');
+    await fetchMessages(true, true, null, true); // forceRefresh = true
     setRefreshing(false);
   };
 

@@ -70,14 +70,14 @@ export default function TagsScreen() {
   const isLoadingRef = useRef(false);
 
   // Cargar tags
-  const fetchTags = async (reset = false) => {
+  const fetchTags = async (reset = false, forceRefresh = false) => {
     if (isLoadingRef.current && !reset) return;
     
     isLoadingRef.current = true;
     setLoading(true);
     try {
-      // Intentar caché solo en primera carga sin búsqueda
-      if (reset && !backendSearchTerm) {
+      // Intentar caché solo en primera carga sin búsqueda Y sin refresh manual
+      if (reset && !backendSearchTerm && !forceRefresh) {
         const cached = await cacheService.get('cache_tags');
         if (cached && Array.isArray(cached)) {
           setAllTags(cached as Tag[]);
@@ -197,7 +197,8 @@ export default function TagsScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     setLastKey(null);
-    fetchTags(true);
+    console.log('🔄 Pull-to-refresh: Cargando desde backend...');
+    fetchTags(true, true); // forceRefresh = true
   };
 
   // Load more

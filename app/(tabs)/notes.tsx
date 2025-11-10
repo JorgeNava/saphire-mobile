@@ -72,11 +72,11 @@ export default function NotesScreen() {
   const [isSaving, setIsSaving] = useState(false);
 
   // Cargar notas
-  const fetchNotes = async (resetPagination = false, customLastKey?: string | null) => {
+  const fetchNotes = async (resetPagination = false, customLastKey?: string | null, forceRefresh = false) => {
     setLoading(true);
     try {
-      // Intentar obtener del caché primero (solo primera página sin filtros)
-      if (resetPagination && !searchQuery) {
+      // Intentar obtener del caché primero (solo primera página sin filtros Y sin refresh manual)
+      if (resetPagination && !searchQuery && !forceRefresh) {
         const cachedNotes = await cacheService.get('cache_notes');
         if (cachedNotes && Array.isArray(cachedNotes)) {
           setNotes(cachedNotes as Note[]);
@@ -278,7 +278,8 @@ export default function NotesScreen() {
     setRefreshing(true);
     setCurrentPage(1);
     setLastKey(null);
-    await fetchNotes(true);
+    console.log('🔄 Pull-to-refresh: Cargando desde backend...');
+    await fetchNotes(true, null, true); // forceRefresh = true
     setRefreshing(false);
   };
 

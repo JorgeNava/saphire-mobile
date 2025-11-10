@@ -115,14 +115,16 @@ export default function ListsScreen() {
     };
   }, []);
 
-  async function fetchLists() {
+  async function fetchLists(forceRefresh = false) {
     try {
-      // Intentar obtener del caché primero
-      const cachedLists = await cacheService.getLists();
-      if (cachedLists) {
-        setLists(cachedLists);
-        console.log('✅ Listas cargadas desde caché');
-        return;
+      // Intentar obtener del caché primero (solo si NO es refresh manual)
+      if (!forceRefresh) {
+        const cachedLists = await cacheService.getLists();
+        if (cachedLists) {
+          setLists(cachedLists);
+          console.log('✅ Listas cargadas desde caché');
+          return;
+        }
       }
 
       // Si no hay caché, obtener del servidor
@@ -336,7 +338,8 @@ export default function ListsScreen() {
   // Pull to refresh
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchLists();
+    console.log('🔄 Pull-to-refresh: Cargando desde backend...');
+    await fetchLists(true); // forceRefresh = true
     setRefreshing(false);
   };
 
