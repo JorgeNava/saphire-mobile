@@ -35,11 +35,14 @@ interface Message {
   sentAt?: number;
 }
 
-// Endpoints correctos para mensajes
+// Endpoints para mensajes (temporalmente hasta migrar a thoughts)
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const TEXT_ENDPOINT = `${API_BASE}/messages`;
 const AUDIO_UPLOAD_ENDPOINT = `${API_BASE}/messages/upload-url`;
 const AUDIO_NOTIFY_ENDPOINT = `${API_BASE}/messages/audio`;
+
+// ConversationId del usuario
+const CONVERSATION_ID = 'user123';
 
 // Formatea timestamp como HH:mm
 const formatTime = (timestamp: number) => {
@@ -52,12 +55,16 @@ const formatTime = (timestamp: number) => {
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const theme = {
-    background: colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC',
-    text: colorScheme === 'dark' ? '$white' : '$black',
+    background: isDark ? '#0A0E27' : '#F5F7FA',
+    card: isDark ? '#1A1F3A' : '#FFFFFF',
+    text: isDark ? '#FFFFFF' : '#1A1F3A',
+    border: isDark ? '#2A2F4A' : '#E5E7EB',
   };
-  const inputBg = colorScheme === 'dark' ? '#162E3C' : '#7DAEB5';
-  const inputBorder = colorScheme === 'dark' ? '#0F2128' : '#6B8B90';
+  const inputBg = isDark ? '#1A1F3A' : '#FFFFFF';
+  const inputBorder = isDark ? '#2A2F4A' : '#E5E7EB';
 
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', text: 'Hola, Jorge 👋', fromMe: false },
@@ -76,6 +83,78 @@ export default function ChatScreen() {
   const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
   const [filteredTags, setFilteredTags] = useState<Array<{tagId: string; name: string}>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Cargar mensajes iniciales
+  useEffect(() => {
+    loadMessages();
+  }, []);
+
+  const loadMessages = async () => {
+    try {
+      // Intentar obtener del caché primero
+      const cachedMessages = await cacheService.getMessages();
+      if (cachedMessages && cachedMessages.length > 0) {
+        setMessages(cachedMessages);
+        console.log('✅ Mensajes cargados desde caché');
+        return;
+      }
+
+      // Si no hay caché, obtener del servidor
+      // NUEVO: API ahora retorna objeto paginado con { items, count, hasMore, lastKey }
+      const res = await fetch(`${TEXT_ENDPOINT}?conversationId=${CONVERSATION_ID}&limit=50&sortOrder=asc`);
+      if (res.ok) {
+        const data = await res.json();
+        
+        // CAMBIO: Ahora data.items en lugar de array directo
+        const messagesArray = data.items || [];
+        
+        // Convertir al formato esperado
+        const formattedMessages: Message[] = messagesArray.map((msg: any) => ({
+          id: msg.messageId || msg.id || String(Date.now()),
+          text: msg.content || msg.text || '',
+          fromMe: msg.sender === 'user123', // Determinar si es del usuario
+          status: 'sent' as const,
+          sentAt: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+        }));
+        
+        setMessages(formattedMessages);
+        
+        // Guardar en caché
+        await cacheService.setMessages(formattedMessages);
+        console.log('✅ Mensajes guardados en caché');
+      }
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      // Si hay error, mantener el mensaje de bienvenida
+      setMessages([{ id: '1', text: 'Hola, Jorge 👋', fromMe: false }]);
+    }
+  };
+
+  // Iniciar sincronización en background de mensajes
+  useEffect(() => {
+    cacheService.startMessagesSync(async () => {
+      const res = await fetch(`${TEXT_ENDPOINT}?conversationId=${CONVERSATION_ID}&limit=50&sortOrder=asc`);
+      const data = await res.json();
+      
+      // CAMBIO: Usar data.items en lugar de array directo
+      const messagesArray = data.items || [];
+      
+      const formattedMessages: Message[] = messagesArray.map((msg: any) => ({
+        id: msg.messageId || msg.id || String(Date.now()),
+        text: msg.content || msg.text || '',
+        fromMe: msg.sender === 'user123',
+        status: 'sent' as const,
+        sentAt: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+      }));
+      
+      setMessages(formattedMessages);
+      return formattedMessages;
+    });
+
+    return () => {
+      cacheService.stopBackgroundSync('cache_messages');
+    };
+  }, []);
 
   // Cargar etiquetas disponibles
   useEffect(() => {
@@ -192,6 +271,10 @@ export default function ChatScreen() {
           m.id === id ? { ...m, status: 'sent', sentAt: Date.now() } : m
         )
       );
+      
+      // Invalidar caché de mensajes y recargar
+      await cacheService.invalidateMessages();
+      await loadMessages();
     } catch (err) {
       console.error(err);
     } finally {

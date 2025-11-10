@@ -20,7 +20,9 @@ const MAPPING = {
   'chevron.right': 'chevron-right',
   'mic.fill': 'mic',
   'tray.full.fill': 'inbox',
-  'message.circle.fill': 'chat'
+  'message.circle.fill': 'chat',
+  'doc.text.fill': 'description',
+  'list.bullet': 'list'
 } as IconMapping;
 
 /**

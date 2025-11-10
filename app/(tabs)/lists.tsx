@@ -41,7 +41,15 @@ const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 
 export default function ListsScreen() {
   const router = useRouter();
-  const themeBg = useColorScheme() === 'dark' ? '#1D3D47' : '#A1CEDC';
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  
+  const theme = {
+    background: isDark ? '#0A0E27' : '#F5F7FA',
+    card: isDark ? '#1A1F3A' : '#FFFFFF',
+    text: isDark ? '#FFFFFF' : '#1A1F3A',
+    border: isDark ? '#2A2F4A' : '#E5E7EB',
+  };
 
   const [lists, setLists] = useState<List[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -65,9 +73,11 @@ export default function ListsScreen() {
   // Iniciar sincronización en background de listas
   useEffect(() => {
     cacheService.startListsSync(async () => {
-      const res = await fetch(`${API_BASE}/lists?userId=user123`);
+      const res = await fetch(`${API_BASE}/lists?userId=user123&limit=50`);
       const data = await res.json();
-      const listsArray = Array.isArray(data) ? data : (data.lists || []);
+      
+      // Soportar tanto respuesta paginada como array directo
+      const listsArray = data.items || (Array.isArray(data) ? data : (data.lists || []));
       
       const parsed: List[] = listsArray.map((l: any) => ({
         listId: l.listId ?? l.id,
@@ -102,7 +112,8 @@ export default function ListsScreen() {
       }
 
       // Si no hay caché, obtener del servidor
-      const res = await fetch(`${API_BASE}/lists?userId=user123`);
+      // Nota: Lists puede o no tener paginación según la API, mantenemos compatibilidad
+      const res = await fetch(`${API_BASE}/lists?userId=user123&limit=50`);
       
       if (!res.ok) {
         const errorText = await res.text();
@@ -111,7 +122,9 @@ export default function ListsScreen() {
       }
       
       const data = await res.json();
-      const listsArray = Array.isArray(data) ? data : (data.lists || []);
+      
+      // Soportar tanto respuesta paginada como array directo
+      const listsArray = data.items || (Array.isArray(data) ? data : (data.lists || []));
       
       const parsed: List[] = listsArray.map((l: any) => ({
         listId: l.listId ?? l.id,
@@ -246,7 +259,7 @@ export default function ListsScreen() {
   };
 
   return (
-    <Box sx={{ flex: 1, bg: themeBg, px: '$4', pt: '$4' }}>
+    <Box sx={{ flex: 1, bg: theme.background, px: '$4', pt: '$4' }}>
       <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$3', mt: 40 }}>
         <Text sx={{ color: '$white', fontSize: 24, fontWeight: 'bold' }}>
           Listas

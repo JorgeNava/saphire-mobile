@@ -2,12 +2,17 @@ import { InputType, Message } from '@/types/message';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { cacheService } from '../../services/cacheService';
 import {
   ActivityIndicator,
+  Alert,
   Button,
   FlatList,
   LayoutAnimation,
+  Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -18,7 +23,8 @@ import {
   useColorScheme,
 } from 'react-native';
 
-const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages';
+const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
+const THOUGHTS_ENDPOINT = `${API_BASE}/thoughts`;
 
 if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -32,11 +38,37 @@ export default function ThoughtsScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const [usedAI, setUsedAI] = useState<boolean | null>(null);
   const [tags, setTags] = useState('');
   const [inputType, setInputType] = useState<InputType>('text');
   const userId = 'user123';
+
+  // Estados para autocompletado de etiquetas
+  const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
+  const [filteredTags, setFilteredTags] = useState<Array<{tagId: string; name: string}>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Estados para paginación
+  const [limit, setLimit] = useState('50');
+  const [lastKey, setLastKey] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showTagsInput, setShowTagsInput] = useState(false);
+  const [totalThoughtsInDB, setTotalThoughtsInDB] = useState<number>(0);
+  const [isLoadingTotal, setIsLoadingTotal] = useState(false);
+  
+  // Historial de lastKeys para navegar hacia atrás
+  const [pageHistory, setPageHistory] = useState<Array<string | null>>([null]);
+  
+  // Estados para el modal de edición
+  const [selectedThought, setSelectedThought] = useState<any>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
@@ -50,11 +82,14 @@ export default function ThoughtsScreen() {
   }>({ field: '', show: false });
 
   const theme = {
-    background: colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC',
-    text: colorScheme === 'dark' ? '#fff' : '#000',
-    card: colorScheme === 'dark' ? '#1e1e1e' : '#fff',
-    border: colorScheme === 'dark' ? '#444' : '#ccc',
+    background: isDark ? '#0A0E27' : '#F5F7FA',
+    card: isDark ? '#1A1F3A' : '#FFFFFF',
+    text: isDark ? '#FFFFFF' : '#1A1F3A',
+    border: isDark ? '#2A2F4A' : '#E5E7EB',
   };
+
+  // Helper para verificar si hay filtros activos
+  const checkActiveFilters = () => Boolean(tags.trim() || dateFrom);
 
   const showPicker = (field: string) => {
     setPickerVisible({ field, show: true });
@@ -86,26 +121,48 @@ export default function ThoughtsScreen() {
     setPickerVisible({ field: '', show: false });
   };
 
-  const fetchMessages = async (applyFilters = true) => {
+  const fetchMessages = async (applyFilters = true, resetPagination = false, customLastKey?: string | null) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.append('userId', userId);
-
-      if (applyFilters) {
-        // Usar 'tagNames' para búsqueda correcta por tags
-        // Nota: El backend debe soportar búsqueda parcial (LIKE %tag%)
-        // Si solo soporta coincidencia exacta, usar tagIds con UUID
-        if (tags.trim()) params.append('tagNames', tags.trim());
-        if (inputType) params.append('inputType', inputType.toLowerCase());
-        if (dateFrom) params.append('dateFrom', toISOStringWithZ(dateFrom));
-        if (dateTo) params.append('dateTo', toISOStringWithZ(dateTo));
-        if (lastUpdatedFrom) params.append('lastUpdatedFrom', toISOStringWithZ(lastUpdatedFrom));
-        if (lastUpdatedTo) params.append('lastUpdatedTo', toISOStringWithZ(lastUpdatedTo));
-        if (usedAI !== null) params.append('usedAI', usedAI.toString());
+      // IMPORTANTE: NO usar caché cuando hay filtros activos
+      if (!applyFilters && !checkActiveFilters()) {
+        const cachedThoughts = await cacheService.get('cache_thoughts');
+        if (cachedThoughts && Array.isArray(cachedThoughts)) {
+          setMessages(cachedThoughts as Message[]);
+          console.log('✅ Thoughts cargados desde caché');
+          setLoading(false);
+          return;
+        }
       }
 
-      const url = `${API_BASE}?${params.toString()}`;
+      const params = new URLSearchParams();
+      params.append('userId', userId);
+      params.append('limit', limit || '50');
+      params.append('sortOrder', 'desc');
+
+      // Usar customLastKey si se proporciona, sino usar el del estado
+      const keyToUse = customLastKey !== undefined ? customLastKey : lastKey;
+
+      // Agregar lastKey para paginación SOLO si NO estamos reseteando
+      if (keyToUse && !resetPagination) {
+        params.append('lastKey', keyToUse);
+        console.log('🔑 Usando lastKey:', keyToUse);
+      } else {
+        console.log('🔑 Sin lastKey (página 1)');
+      }
+
+      if (applyFilters) {
+        // Thoughts solo soporta: tagIds, tagSource, createdAt
+        if (tags.trim()) {
+          // Buscar por nombres de tags (el backend debe soportar esto)
+          params.append('tagNames', tags.trim());
+        }
+        if (dateFrom) params.append('createdAt', toISOStringWithZ(dateFrom));
+        // Nota: Thoughts no tiene inputType ni usedAI
+      }
+
+      const url = `${THOUGHTS_ENDPOINT}?${params.toString()}`;
+      console.log('🔍 Fetching:', url);
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -115,14 +172,131 @@ export default function ThoughtsScreen() {
       }
       
       const data = await res.json();
-      const messages = Array.isArray(data) ? data : (data.messages || []);
-      setMessages(messages);
+      // NUEVO: API ahora retorna objeto paginado con { items, count, hasMore, lastKey }
+      const thoughtsArray = data.items || [];
+      setMessages(thoughtsArray);
+      
+      // Actualizar estado de paginación
+      const newLastKey = data.lastKey || null;
+      setLastKey(newLastKey);
+      setHasMore(data.hasMore || false);
+      
+      // Si estamos avanzando y hay un nuevo lastKey, agregarlo al historial
+      if (newLastKey && !resetPagination && !pageHistory.includes(newLastKey)) {
+        setPageHistory(prev => [...prev, newLastKey]);
+      }
+      
+      // Si estamos reseteando, limpiar el historial
+      if (resetPagination) {
+        setPageHistory([null]);
+      }
+
+      // Guardar en caché solo si no hay filtros activos
+      if (!checkActiveFilters()) {
+        await cacheService.set('cache_thoughts', thoughtsArray, 2 * 60 * 1000); // 2 minutos
+        console.log('✅ Thoughts guardados en caché');
+      } else {
+        console.log('🔍 Resultados filtrados (no se guardan en caché)');
+      }
     } catch (err) {
-      console.error('❌ Error fetching messages:', err);
+      console.error('❌ Error fetching thoughts:', err);
     } finally {
       setLoading(false);
     }
   };
+
+  // Cargar total de pensamientos en BD (solo una vez)
+  const fetchTotalThoughts = async () => {
+    // Evitar múltiples ejecuciones simultáneas
+    if (isLoadingTotal) {
+      console.log('⏳ Ya se está cargando el total, saltando...');
+      return;
+    }
+    
+    setIsLoadingTotal(true);
+    console.log('🔄 Iniciando cálculo del total de pensamientos...');
+    
+    try {
+      let total = 0;
+      let currentLastKey = null;
+      let currentHasMore = true;
+      let pageCount = 0;
+      
+      while (currentHasMore) {
+        pageCount++;
+        const params = new URLSearchParams();
+        params.append('userId', userId);
+        params.append('limit', '100'); // Usar límite alto para contar más rápido
+        params.append('sortOrder', 'desc');
+        if (currentLastKey) params.append('lastKey', currentLastKey);
+        
+        const countRes = await fetch(`${THOUGHTS_ENDPOINT}?${params.toString()}`);
+        if (countRes.ok) {
+          const countData = await countRes.json();
+          const itemsCount = (countData.items || []).length;
+          total += itemsCount;
+          currentLastKey = countData.lastKey;
+          currentHasMore = countData.hasMore || false;
+          
+          console.log(`📄 Página ${pageCount}: ${itemsCount} items (Total acumulado: ${total})`);
+        } else {
+          console.error('❌ Error en página', pageCount);
+          break;
+        }
+      }
+      
+      setTotalThoughtsInDB(total);
+      console.log(`✅ Total FINAL de pensamientos en BD: ${total}`);
+    } catch (err) {
+      console.error('❌ Error fetching total thoughts:', err);
+    } finally {
+      setIsLoadingTotal(false);
+    }
+  };
+
+  // Cargar etiquetas y total solo una vez al inicio
+  useEffect(() => {
+    const loadTags = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/tags?userId=${userId}`);
+        if (res.ok) {
+          const tags = await res.json();
+          setAvailableTags(tags);
+        }
+      } catch (err) {
+        console.error('Error loading tags:', err);
+      }
+    };
+    
+    loadTags();
+    
+    // Cargar total de pensamientos (solo una vez al inicio)
+    // No se vuelve a calcular con filtros
+    fetchTotalThoughts();
+  }, []); // Array vacío = solo se ejecuta una vez
+
+  // Filtrar etiquetas basado en el input (igual que en Chat)
+  useEffect(() => {
+    if (!tags.trim()) {
+      setShowSuggestions(false);
+      return;
+    }
+
+    // Obtener el último tag que se está escribiendo
+    const tagsList = tags.split(',').map(t => t.trim());
+    const lastTag = tagsList[tagsList.length - 1];
+
+    if (!lastTag) {
+      setShowSuggestions(false);
+      return;
+    }
+
+    const filtered = availableTags.filter(tag =>
+      tag.name.toLowerCase().includes(lastTag.toLowerCase())
+    );
+    setFilteredTags(filtered);
+    setShowSuggestions(filtered.length > 0);
+  }, [tags, availableTags]);
 
   // Cargar mensajes al montar el componente
   useEffect(() => {
@@ -152,6 +326,149 @@ export default function ThoughtsScreen() {
   const formatDateDisplay = (date: Date | null) =>
     date ? toISOStringWithZ(date) : 'Seleccionar fecha';
 
+  // Funciones de paginación
+  const goToNextPage = () => {
+    if (hasMore && lastKey) {
+      setCurrentPage(prev => prev + 1);
+      // NO resetear paginación, usar lastKey existente
+      fetchMessages(true, false);
+    }
+  };
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      const newPage = currentPage - 1;
+      
+      // Obtener el lastKey de la página anterior del historial
+      const previousLastKey = pageHistory[newPage - 1] || null;
+      
+      console.log(`⬅️ Retrocediendo a página ${newPage}, lastKey:`, previousLastKey);
+      console.log('📚 Historial actual:', pageHistory);
+      
+      // Actualizar estados
+      setCurrentPage(newPage);
+      setLastKey(previousLastKey);
+      
+      // Remover el último elemento del historial
+      setPageHistory(prev => prev.slice(0, -1));
+      
+      // Hacer fetch con el lastKey de la página anterior (pasarlo directamente)
+      fetchMessages(true, false, previousLastKey);
+    }
+  };
+
+  const toggleTags = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    // Si se está cerrando, limpiar el input de etiquetas
+    if (showTagsInput) {
+      setTags('');
+      setShowSuggestions(false);
+    }
+    setShowTagsInput(!showTagsInput);
+  };
+
+  const selectTag = (tagName: string) => {
+    const currentTags = tags.split(',').map(t => t.trim()).filter(t => t);
+    // Remover el último tag incompleto y agregar el seleccionado
+    currentTags.pop();
+    currentTags.push(tagName);
+    setTags(currentTags.join(', ') + ', ');
+    setShowSuggestions(false);
+  };
+
+  // Abrir modal de edición
+  const openEditModal = (thought: any) => {
+    setSelectedThought(thought);
+    setEditContent(thought.content || '');
+    setEditTags((thought.tagNames || []).join(', '));
+    setShowEditModal(true);
+  };
+
+  // Cerrar modal
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setSelectedThought(null);
+    setEditContent('');
+    setEditTags('');
+  };
+
+  // Guardar cambios
+  const saveThought = async () => {
+    if (!selectedThought) return;
+    
+    setIsSaving(true);
+    try {
+      const thoughtId = selectedThought.thoughtId;
+      const response = await fetch(`${THOUGHTS_ENDPOINT}/${thoughtId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: editContent,
+          tagNames: editTags.split(',').map(t => t.trim()).filter(t => t),
+          tagSource: 'Manual',
+        }),
+      });
+
+      if (response.ok) {
+        console.log('✅ Pensamiento actualizado');
+        closeEditModal();
+        // Recargar pensamientos
+        fetchMessages(true, false, lastKey);
+      } else {
+        const error = await response.text();
+        console.error('❌ Error al actualizar:', error);
+        alert('Error al actualizar el pensamiento');
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      alert('Error al actualizar el pensamiento');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Eliminar pensamiento
+  const deleteThought = async () => {
+    if (!selectedThought) return;
+    
+    Alert.alert(
+      'Eliminar pensamiento',
+      '¿Estás seguro de eliminar este pensamiento?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              const thoughtId = selectedThought.thoughtId;
+              const response = await fetch(`${THOUGHTS_ENDPOINT}/${thoughtId}`, {
+                method: 'DELETE',
+              });
+
+              if (response.ok) {
+                console.log('✅ Pensamiento eliminado');
+                closeEditModal();
+                // Recargar pensamientos
+                fetchMessages(true, false, lastKey);
+              } else {
+                const error = await response.text();
+                console.error('❌ Error al eliminar:', error);
+                Alert.alert('Error', 'No se pudo eliminar el pensamiento');
+              }
+            } catch (err) {
+              console.error('❌ Error:', err);
+              Alert.alert('Error', 'No se pudo eliminar el pensamiento');
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const getPickerValue = (): Date => {
     switch (pickerVisible.field) {
       case 'dateFrom': return dateFrom ?? new Date();
@@ -167,59 +484,125 @@ export default function ThoughtsScreen() {
       <Text style={[styles.title, { color: theme.text }]}>Pensamientos</Text>
 
       <View style={styles.filters}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Text style={[styles.label, { color: theme.text }]}>Etiquetas</Text>
-          <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>
-            {messages.length} {messages.length === 1 ? 'pensamiento' : 'pensamientos'}
-          </Text>
+        {/* Header con contadores */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <View>
+            <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>
+              Total de {totalThoughtsInDB} {totalThoughtsInDB === 1 ? 'pensamiento' : 'pensamientos'}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 }}>
+              Mostrando {messages.length} en esta página
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: theme.text, fontSize: 12 }}>Límite:</Text>
+            <TextInput
+              value={limit}
+              onChangeText={setLimit}
+              keyboardType="number-pad"
+              style={[styles.limitInput, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
+            />
+          </View>
         </View>
-        <TextInput
-          placeholder="Ej: trabajo, urgente, reunión"
-          value={tags}
-          onChangeText={setTags}
-          style={[styles.input, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
-          placeholderTextColor={theme.text}
-        />
 
-        <View style={styles.switchContainer}>
-          <Text style={{ color: theme.text }}>Tipo: {inputType}</Text>
-          <Switch value={inputType === 'audio'} onValueChange={toggleInputType} />
-        </View>
-
-        <View style={styles.switchContainer}>
-          <Text style={{ color: theme.text }}>Usó IA:</Text>
-          <TouchableOpacity onPress={toggleUsedAI} style={[styles.toggleButton, { backgroundColor: theme.card }]}>
-            <Text style={[styles.toggleText, { color: theme.text }]}>
-              {usedAI === null ? 'Cualquiera' : usedAI ? 'Sí' : 'No'}
+        {/* Botón que se transforma en box de filtro de etiquetas */}
+        {!showTagsInput ? (
+          <TouchableOpacity 
+            onPress={toggleTags}
+            style={[styles.tagToggleButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+          >
+            <Text style={{ color: theme.text, fontSize: 14 }}>
+              🏷️ Filtrar por etiquetas
             </Text>
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.dropdownContainer}>
-          <TouchableOpacity onPress={toggleDateFilters} style={styles.dropdownToggle}>
-            <Text style={[styles.label, { color: theme.text }]}>Por fechas {showDateFilters ? '▲' : '▼'}</Text>
-          </TouchableOpacity>
-
-          {showDateFilters && (
-            <View style={{ marginTop: 10 }}>
-              {[
-                { label: 'Desde (fecha creación)', field: 'dateFrom', value: dateFrom },
-                { label: 'Hasta (fecha creación)', field: 'dateTo', value: dateTo },
-                { label: 'Desde (última actualización)', field: 'lastUpdatedFrom', value: lastUpdatedFrom },
-                { label: 'Hasta (última actualización)', field: 'lastUpdatedTo', value: lastUpdatedTo },
-              ].map(({ label, field, value }) => (
-                <View key={field}>
-                  <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
-                  <TouchableOpacity style={[styles.dateButton, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => showPicker(field)}>
-                    <Text style={{ color: theme.text }}>{formatDateDisplay(value)}</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+        ) : (
+          <View style={[styles.tagFilterBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 20 }}>🏷️</Text>
+                <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>
+                  Etiquetas
+                </Text>
+              </View>
+              <TouchableOpacity onPress={toggleTags}>
+                <Text style={{ color: theme.text, fontSize: 20 }}>✕</Text>
+              </TouchableOpacity>
             </View>
-          )}
-        </View>
+            
+            <TextInput
+              placeholder="trabajo, urgente, reunión..."
+              value={tags}
+              onChangeText={setTags}
+              style={[styles.input, { color: theme.text, backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.3)' }]}
+              placeholderTextColor="rgba(255,255,255,0.5)"
+            />
+            
+            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
+              Separa las etiquetas con comas
+            </Text>
 
-        <Button title="Aplicar filtros" onPress={() => fetchMessages(true)} />
+            {/* Sugerencias EXACTAMENTE igual que Chat */}
+            {showSuggestions && (
+              <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' }}>
+                <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginBottom: 8 }}>
+                  Sugerencias:
+                </Text>
+                <ScrollView 
+                  style={{ maxHeight: 120 }}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="always"
+                >
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 4 }}>
+                    {filteredTags.map((tag) => (
+                      <TouchableOpacity
+                        key={tag.tagId}
+                        onPress={() => selectTag(tag.name)}
+                        style={styles.tagChip}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 12 }}>{tag.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Botón aplicar filtros */}
+        <TouchableOpacity 
+          onPress={() => {
+            // Resetear paginación al aplicar filtros
+            setLastKey(null);
+            setCurrentPage(1);
+            fetchMessages(true, true); // true = aplicar filtros, true = resetear paginación
+          }}
+          style={[styles.applyButton, { backgroundColor: '#3b82f6' }]}
+        >
+          <Text style={{ color: '#fff', fontWeight: '600' }}>Aplicar filtros</Text>
+        </TouchableOpacity>
+
+        {/* Controles de paginación */}
+        <View style={styles.paginationContainer}>
+          <TouchableOpacity 
+            onPress={goToPreviousPage}
+            disabled={currentPage === 1}
+            style={[styles.paginationButton, { opacity: currentPage === 1 ? 0.5 : 1, backgroundColor: theme.card, borderColor: theme.border }]}
+          >
+            <Text style={{ color: theme.text }}>← Anterior</Text>
+          </TouchableOpacity>
+          
+          <Text style={{ color: theme.text, fontWeight: '600' }}>Página {currentPage}</Text>
+          
+          <TouchableOpacity 
+            onPress={goToNextPage}
+            disabled={!hasMore}
+            style={[styles.paginationButton, { opacity: !hasMore ? 0.5 : 1, backgroundColor: theme.card, borderColor: theme.border }]}
+          >
+            <Text style={{ color: theme.text }}>Siguiente →</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {pickerVisible.show && (
@@ -236,38 +619,146 @@ export default function ThoughtsScreen() {
       ) : (
         <FlatList
           data={messages}
-          keyExtractor={(item) => item.messageId}
+          keyExtractor={(item) => (item as any).thoughtId || item.messageId || (item as any).id || String(Math.random())}
           contentContainerStyle={{ paddingBottom: 50 }}
           renderItem={({ item }) => {
-            // El nuevo backend usa 'content', el viejo usaba 'originalContent'
-            const content = item.content || item.originalContent || 'Sin contenido';
+            // Thoughts tienen estructura diferente a Messages
+            const thought = item as any;
+            const content = thought.content || thought.originalContent || 'Sin contenido';
+            const tags = thought.tagNames || [];
             
             return (
-              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Text style={{ color: theme.text }}>Tipo: {item.inputType}</Text>
-                <Text style={{ color: theme.text }}>Contenido: {content}</Text>
-                {item.tagNames && item.tagNames.length > 0 && (
-                  <Text style={{ color: theme.text }}>Etiquetas: {item.tagNames.join(', ')}</Text>
+              <TouchableOpacity 
+                onPress={() => openEditModal(thought)}
+                style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}
+              >
+                <Text style={{ color: theme.text, fontWeight: 'bold', marginBottom: 8 }}>
+                  {content}
+                </Text>
+                
+                {tags.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
+                    {tags.map((tag: string, index: number) => (
+                      <View 
+                        key={index}
+                        style={{ 
+                          backgroundColor: theme.border, 
+                          paddingHorizontal: 8, 
+                          paddingVertical: 4, 
+                          borderRadius: 12,
+                          marginRight: 6,
+                          marginBottom: 4
+                        }}
+                      >
+                        <Text style={{ color: theme.text, fontSize: 12 }}>
+                          {tag}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 )}
-                {item.tagSource && (
-                  <Text style={{ color: theme.text, fontSize: 12, fontStyle: 'italic' }}>Origen: {item.tagSource}</Text>
+                
+                {thought.tagSource && (
+                  <Text style={{ color: theme.text, fontSize: 12, fontStyle: 'italic', marginBottom: 4 }}>
+                    Origen tags: {thought.tagSource}
+                  </Text>
                 )}
-                {/* Backward compatibility */}
-                {!item.tagNames && item.classification && (
-                  <Text style={{ color: theme.text }}>Clasificación: {item.classification}</Text>
+                
+                {thought.createdAt && (
+                  <Text style={{ color: theme.text, fontSize: 12, opacity: 0.7 }}>
+                    {new Date(thought.createdAt).toLocaleString('es-MX', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </Text>
                 )}
-                <Text style={{ color: theme.text }}>Usó IA: {item.usedAI ? 'Sí' : 'No'}</Text>
-                {(item.timestamp || item.createdAt) && (
-                  <Text style={{ color: theme.text }}>Creado: {new Date(item.timestamp || item.createdAt || '').toLocaleString()}</Text>
-                )}
-                {(item.lastUpdated || item.updatedAt) && (
-                  <Text style={{ color: theme.text }}>Actualizado: {new Date(item.lastUpdated || item.updatedAt || '').toLocaleString()}</Text>
-                )}
-              </View>
+              </TouchableOpacity>
             );
           }}
         />
       )}
+
+      {/* Modal de edición */}
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeEditModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Editar Pensamiento</Text>
+              <TouchableOpacity onPress={closeEditModal}>
+                <Text style={{ color: theme.text, fontSize: 24 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Contenido */}
+            <ScrollView style={styles.modalBody}>
+              <Text style={[styles.modalLabel, { color: theme.text }]}>Contenido:</Text>
+              <TextInput
+                value={editContent}
+                onChangeText={setEditContent}
+                multiline
+                numberOfLines={4}
+                style={[styles.modalTextArea, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                placeholderTextColor="rgba(255,255,255,0.5)"
+              />
+
+              <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>Etiquetas:</Text>
+              <TextInput
+                value={editTags}
+                onChangeText={setEditTags}
+                placeholder="trabajo, urgente, reunión..."
+                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                placeholderTextColor="rgba(255,255,255,0.5)"
+              />
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
+                Separa las etiquetas con comas
+              </Text>
+            </ScrollView>
+
+            {/* Botones */}
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                onPress={deleteThought}
+                disabled={isDeleting}
+                style={[styles.modalButton, styles.deleteButton]}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Ionicons name="trash" size={20} color="#fff" style={{ marginLeft: -2 }} />
+                )}
+              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity
+                  onPress={closeEditModal}
+                  style={[styles.modalButton, styles.cancelButton, { borderColor: theme.border }]}
+                >
+                  <Text style={{ color: theme.text, fontSize: 14 }}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={saveThought}
+                  disabled={isSaving}
+                  style={[styles.modalButton, styles.saveButton]}
+                >
+                  <Text style={styles.saveButtonText}>
+                    {isSaving ? 'Guardando...' : 'Guardar'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -277,7 +768,51 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: 'bold', marginBottom: 16, marginTop: 40 },
   filters: { marginBottom: 20 },
   label: { marginBottom: 4, fontWeight: '600' },
-  input: { borderWidth: 1, padding: 8, borderRadius: 6, marginBottom: 10 },
+  input: { borderWidth: 1, padding: 8, borderRadius: 6 },
+  limitInput: {
+    borderWidth: 1,
+    padding: 6,
+    borderRadius: 6,
+    width: 60,
+    textAlign: 'center',
+  },
+  tagToggleButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  tagFilterBox: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  tagChip: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  applyButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  paginationButton: {
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
   switchContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   toggleButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   toggleText: { fontWeight: '500' },
@@ -285,4 +820,105 @@ const styles = StyleSheet.create({
   dropdownContainer: { marginBottom: 16 },
   dropdownToggle: { paddingVertical: 6 },
   card: { padding: 12, borderWidth: 1, borderRadius: 8, marginBottom: 12 },
+  suggestionsContainer: {
+    borderWidth: 1,
+    borderRadius: 6,
+    marginBottom: 10,
+    maxHeight: 150,
+  },
+  suggestionItem: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#444',
+  },
+  // Estilos del modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalBody: {
+    marginBottom: 20,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  modalInput: {
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 14,
+  },
+  modalTextArea: {
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 14,
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  modalButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButton: {
+    backgroundColor: '#ef4444',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    padding: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  deleteButtonText: {
+    fontSize: 22,
+    textAlign: 'center',
+  },
+  cancelButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    paddingHorizontal: 20,
+  },
+  saveButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 24,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
 });
