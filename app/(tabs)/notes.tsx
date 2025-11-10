@@ -15,6 +15,7 @@ import {
   View,
   useColorScheme,
 } from 'react-native';
+import { cacheService } from '../../services/cacheService';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const NOTES_ENDPOINT = `${API_BASE}/notes`;
@@ -71,6 +72,15 @@ export default function NotesScreen() {
   const fetchNotes = async (resetPagination = false, customLastKey?: string | null) => {
     setLoading(true);
     try {
+      // Intentar obtener del caché primero (solo primera página sin filtros)
+      if (resetPagination && !searchQuery) {
+        const cachedNotes = await cacheService.get('cache_notes');
+        if (cachedNotes && Array.isArray(cachedNotes)) {
+          setNotes(cachedNotes as Note[]);
+          console.log('✅ Notas cargadas desde caché');
+        }
+      }
+
       const params = new URLSearchParams();
       params.append('userId', userId);
       params.append('limit', limit || '20');
@@ -93,6 +103,12 @@ export default function NotesScreen() {
       setNotes(data.items || []);
       setLastKey(data.lastKey || null);
       setHasMore(data.hasMore || false);
+
+      // Guardar en caché solo primera página sin filtros
+      if (resetPagination && !searchQuery) {
+        await cacheService.set('cache_notes', data.items || [], 5 * 60 * 1000); // 5 minutos
+        console.log('✅ Notas guardadas en caché');
+      }
 
       console.log(`✅ Loaded ${data.items?.length || 0} notes`);
     } catch (err) {
@@ -131,6 +147,20 @@ export default function NotesScreen() {
     }
   };
 
+  // Background sync para notas
+  useEffect(() => {
+    cacheService.startNotesSync(async () => {
+      const res = await fetch(`${NOTES_ENDPOINT}?userId=${userId}&limit=20&sortOrder=desc`);
+      const data = await res.json();
+      setNotes(data.items || []); // Actualizar estado con datos frescos
+      return data.items || [];
+    });
+
+    return () => {
+      cacheService.stopBackgroundSync('cache_notes');
+    };
+  }, []);
+
   // Crear nota
   const createNote = async () => {
     if (!modalTitle.trim() || !modalContent.trim()) {
@@ -153,6 +183,8 @@ export default function NotesScreen() {
 
       if (response.ok) {
         console.log('✅ Nota creada');
+        // Invalidar caché para forzar recarga
+        await cacheService.set('cache_notes', null, 0);
         closeModal();
         fetchNotes(true);
       } else {
@@ -172,27 +204,41 @@ export default function NotesScreen() {
 
     setIsSaving(true);
     try {
+      const tagNamesArray = modalTags.split(',').map(t => t.trim()).filter(t => t);
+      
+      console.log('🔄 Actualizando nota:', {
+        noteId: editingNote.noteId,
+        title: modalTitle,
+        tagNames: tagNamesArray,
+      });
+
       const response = await fetch(`${NOTES_ENDPOINT}/${editingNote.noteId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId: 'user123',
           title: modalTitle,
           content: modalContent,
-          tagNames: modalTags.split(',').map(t => t.trim()).filter(t => t),
+          tagNames: tagNamesArray,
           tagSource: 'Manual',
         }),
       });
 
       if (response.ok) {
-        console.log('✅ Nota actualizada');
+        const updatedNote = await response.json();
+        console.log('✅ Nota actualizada:', updatedNote);
+        // Invalidar caché para forzar recarga
+        await cacheService.set('cache_notes', null, 0);
         closeModal();
-        fetchNotes(false, lastKey);
+        fetchNotes(true);
       } else {
-        throw new Error('Error al actualizar nota');
+        const errorData = await response.text();
+        console.error('❌ Error del servidor:', response.status, errorData);
+        throw new Error(`Error al actualizar nota: ${response.status}`);
       }
-    } catch (err) {
-      console.error('❌ Error:', err);
-      Alert.alert('Error', 'No se pudo actualizar la nota');
+    } catch (err: any) {
+      console.error('❌ Error completo:', err);
+      Alert.alert('Error', err.message || 'No se pudo actualizar la nota');
     } finally {
       setIsSaving(false);
     }

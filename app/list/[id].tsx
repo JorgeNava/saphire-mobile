@@ -24,6 +24,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { cacheService } from '../../services/cacheService';
 
 const API_BASE =
   'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
@@ -33,11 +34,24 @@ export default function ListDetailScreen() {
   const router = useRouter();
   const { id: listId } = useLocalSearchParams();
   const colorScheme = useColorScheme();
-  const bg = colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC';
+  const isDark = colorScheme === 'dark';
+  
+  const theme = {
+    background: isDark ? '#0A0E27' : '#F5F7FA',
+    card: isDark ? '#1A1F3A' : '#FFFFFF',
+    text: isDark ? '#FFFFFF' : '#1A1F3A',
+    border: isDark ? '#2A2F4A' : '#E5E7EB',
+  };
 
-  const [items, setItems] = useState<Array<{itemId?: string; content: string} | string>>([]);
+  const [items, setItems] = useState<Array<{itemId?: string; content: string; completed?: boolean; order?: number} | string>>([]);
   const [newItem, setNewItem] = useState('');
   const [showItemInput, setShowItemInput] = useState(false);
+  const [editingItem, setEditingItem] = useState<{index: number; content: string} | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingItem, setViewingItem] = useState<string>('');
+  const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
   const itemInputRef = useRef<TextInput | null>(null);
   const listRef = useRef<FlatList<any>>(null);
   
@@ -78,9 +92,16 @@ export default function ListDetailScreen() {
           return router.back();
         }
         
-        // Normalizar items: pueden ser strings o objetos {itemId, content}
+        // Normalizar items: pueden ser strings o objetos {itemId, content, completed}
         const normalizedItems = (lst.items || []).map((item: any) => 
-          typeof item === 'string' ? item : item.content
+          typeof item === 'string' 
+            ? { content: item, completed: false } 
+            : { 
+                itemId: item.itemId,
+                content: item.content, 
+                completed: item.completed || false,
+                order: item.order
+              }
         );
         setItems(normalizedItems);
         setTagIds(lst.tagIds || []);
@@ -167,6 +188,138 @@ export default function ListDetailScreen() {
       Alert.alert('Error', 'No se pudo eliminar el elemento');
     }
   };
+
+  // Toggle completed status
+  const toggleItemCompleted = async (index: number) => {
+    const item = items[index];
+    const itemObj = typeof item === 'string' ? { content: item, completed: false } : item;
+    const newCompletedState = !itemObj.completed;
+    
+    // Optimistic update
+    const updatedItems = [...items];
+    const updatedItem = typeof item === 'string' 
+      ? { content: item, completed: newCompletedState } 
+      : { ...itemObj, completed: newCompletedState };
+    updatedItems[index] = updatedItem;
+    setItems(updatedItems);
+    
+    // Actualizar en el servidor usando el endpoint específico
+    try {
+      // Si el item tiene itemId, usar el endpoint específico (más eficiente)
+      if (itemObj.itemId) {
+        const res = await fetch(`${API_BASE}/lists/${listId}/items/${itemObj.itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: 'user123',
+            completed: newCompletedState,
+          }),
+        });
+        
+        if (!res.ok) throw new Error('Failed to update item');
+        
+        const updatedList = await res.json();
+        // Actualizar con la respuesta del servidor
+        setItems(updatedList.items || []);
+        setFullListData(updatedList);
+        console.log('✅ Item actualizado con endpoint específico');
+      } else {
+        // Fallback: actualizar toda la lista si no hay itemId
+        await updateListItems(updatedItems);
+        console.log('✅ Item actualizado con endpoint de lista completa');
+      }
+      
+      // Invalidar caché de listas
+      await cacheService.set('cache_lists', null, 0);
+    } catch (err) {
+      console.error('❌ Error updating item:', err);
+      // Revertir cambio si falla
+      setItems(items);
+      Alert.alert('Error', 'No se pudo actualizar el elemento');
+    }
+  };
+
+  // Abrir modal de vista completa
+  const openViewItem = (content: string) => {
+    setViewingItem(content);
+    setShowViewModal(true);
+  };
+
+  // Abrir modal de edición
+  const openEditItem = (index: number, content: string) => {
+    setEditingItem({ index, content });
+    setEditContent(content);
+    setShowEditModal(true);
+  };
+
+  // Guardar edición
+  const saveEditItem = async () => {
+    if (!editContent.trim() || editingItem === null) return;
+    
+    const updatedItems = [...items];
+    const item = updatedItems[editingItem.index];
+    const itemObj = typeof item === 'string' ? { content: item, completed: false } : item;
+    itemObj.content = editContent.trim();
+    updatedItems[editingItem.index] = itemObj;
+    
+    setItems(updatedItems);
+    setShowEditModal(false);
+    setEditingItem(null);
+    setEditContent('');
+    
+    // Actualizar en el servidor
+    try {
+      await updateListItems(updatedItems);
+    } catch (err) {
+      console.error('Error updating item:', err);
+      Alert.alert('Error', 'No se pudo actualizar el elemento');
+    }
+  };
+
+  // Actualizar items en el servidor
+  const updateListItems = async (updatedItems: any[]) => {
+    const res = await fetch(`${API_BASE}/lists/${listId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...fullListData,
+        items: updatedItems,
+        updatedAt: new Date().toISOString(),
+        lastModifiedBy: 'user123'
+      }),
+    });
+    
+    if (!res.ok) throw new Error('Failed to update');
+    const result = await res.json();
+    setFullListData(result);
+    
+    // Invalidar caché de listas para que se actualice en la pantalla principal
+    await cacheService.set('cache_lists', null, 0);
+  };
+
+  // Estadísticas
+  const getStats = useMemo(() => {
+    const normalizedItems = items.map(item => 
+      typeof item === 'string' ? { content: item, completed: false } : item
+    );
+    const total = normalizedItems.length;
+    const completed = normalizedItems.filter(i => i.completed).length;
+    const pending = total - completed;
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, pending, percentage };
+  }, [items]);
+
+  // Filtrar items
+  const getFilteredItems = useMemo(() => {
+    const normalizedItems = items.map(item => 
+      typeof item === 'string' ? { content: item, completed: false } : item
+    );
+    switch (filter) {
+      case 'completed': return normalizedItems.filter(i => i.completed);
+      case 'pending': return normalizedItems.filter(i => !i.completed);
+      default: return normalizedItems;
+    }
+  }, [items, filter]);
 
   const loadAvailableTags = async () => {
     try {
@@ -269,30 +422,179 @@ export default function ListDetailScreen() {
     }
   };
 
-  const renderItem: ListRenderItem<{itemId?: string; content: string} | string> = ({ item }) => {
-    const displayText = typeof item === 'string' ? item : item.content;
+  const renderItem: ListRenderItem<{itemId?: string; content: string; completed?: boolean} | string> = ({ item, index }) => {
+    const itemObj = typeof item === 'string' ? { content: item, completed: false } : item;
+    const displayText = itemObj.content;
+    const isCompleted = itemObj.completed || false;
+    
     return (
     <HStack
       justifyContent="space-between"
       alignItems="center"
-      sx={{ mb: '$2', px: '$3', py: '$2', bg: '$gray700', borderRadius: '$md' }}
+      sx={{ 
+        mb: '$2', 
+        px: '$3', 
+        py: '$3', 
+        bg: theme.card, 
+        borderRadius: '$md',
+        borderWidth: 1,
+        borderColor: theme.border,
+        opacity: isCompleted ? 0.6 : 1
+      }}
     >
-      <Text sx={{ color: '$white' }}>{displayText}</Text>
-      <Pressable onPress={() => deleteItem(displayText)}>
-        <Icon as={MaterialIcons} name="delete" size="sm" color="$red500" />
+      {/* Checkbox */}
+      <Pressable 
+        onPress={() => toggleItemCompleted(index)}
+        sx={{ marginRight: '$3' }}
+      >
+        <Icon 
+          as={MaterialIcons} 
+          name={isCompleted ? "check-box" : "check-box-outline-blank"} 
+          size="md" 
+          color={isCompleted ? "$green500" : theme.text} 
+        />
       </Pressable>
+
+      {/* Texto - Clickeable para ver completo */}
+      <Pressable 
+        onPress={() => openViewItem(displayText)}
+        sx={{ flex: 1, marginRight: '$3' }}
+      >
+        <Text 
+          sx={{ 
+            color: theme.text, 
+            fontSize: '$md',
+            textDecorationLine: isCompleted ? 'line-through' : 'none'
+          }}
+          numberOfLines={2}
+        >
+          {displayText}
+        </Text>
+      </Pressable>
+
+      {/* Botones de acción */}
+      <HStack sx={{ gap: '$2' }}>
+        <Pressable 
+          onPress={() => openEditItem(index, displayText)}
+          sx={{
+            padding: '$2',
+            borderRadius: '$md',
+            bg: 'rgba(59, 130, 246, 0.1)'
+          }}
+        >
+          <Icon as={MaterialIcons} name="edit" size="sm" color="$blue500" />
+        </Pressable>
+        
+        <Pressable 
+          onPress={() => deleteItem(displayText)}
+          sx={{
+            padding: '$2',
+            borderRadius: '$md',
+            bg: 'rgba(239, 68, 68, 0.1)'
+          }}
+        >
+          <Icon as={MaterialIcons} name="delete" size="sm" color="$red500" />
+        </Pressable>
+      </HStack>
     </HStack>
   );
   };
 
   const renderHeader = () => (
     <Box sx={{ px: '$4', pt: '$4' }}>
-      <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$2' }}>
-        <Text sx={{ color: '$white', fontSize: '$md', fontWeight: 'bold' }}>
+      {/* Estadísticas y Progreso */}
+      {getStats.total > 0 && (
+        <Box sx={{ mb: '$4', bg: theme.card, p: '$3', borderRadius: '$lg', borderWidth: 1, borderColor: theme.border }}>
+          <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$2' }}>
+            <Text sx={{ color: theme.text, fontSize: '$md', fontWeight: '600' }}>
+              {getStats.completed} de {getStats.total} completados
+            </Text>
+            <Text sx={{ color: '$green500', fontSize: '$lg', fontWeight: 'bold' }}>
+              {getStats.percentage}%
+            </Text>
+          </HStack>
+          
+          {/* Barra de progreso */}
+          <Box sx={{ 
+            height: 8, 
+            bg: isDark ? '$gray700' : '$gray200', 
+            borderRadius: '$full', 
+            overflow: 'hidden' 
+          }}>
+            <Box sx={{ 
+              height: '100%', 
+              width: `${getStats.percentage}%`, 
+              bg: '$green500',
+              borderRadius: '$full'
+            }} />
+          </Box>
+        </Box>
+      )}
+
+      {/* Filtros */}
+      <HStack sx={{ mb: '$4', gap: '$2' }}>
+        <Pressable
+          onPress={() => setFilter('all')}
+          sx={{
+            flex: 1,
+            py: '$2',
+            px: '$3',
+            borderRadius: '$md',
+            bg: filter === 'all' ? '$blue500' : theme.card,
+            borderWidth: 1,
+            borderColor: filter === 'all' ? '$blue500' : theme.border,
+            alignItems: 'center'
+          }}
+        >
+          <Text sx={{ color: filter === 'all' ? '$white' : theme.text, fontSize: '$sm', fontWeight: '600' }}>
+            Todos ({getStats.total})
+          </Text>
+        </Pressable>
+        
+        <Pressable
+          onPress={() => setFilter('pending')}
+          sx={{
+            flex: 1,
+            py: '$2',
+            px: '$3',
+            borderRadius: '$md',
+            bg: filter === 'pending' ? '$orange500' : theme.card,
+            borderWidth: 1,
+            borderColor: filter === 'pending' ? '$orange500' : theme.border,
+            alignItems: 'center'
+          }}
+        >
+          <Text sx={{ color: filter === 'pending' ? '$white' : theme.text, fontSize: '$sm', fontWeight: '600' }}>
+            Pendientes ({getStats.pending})
+          </Text>
+        </Pressable>
+        
+        <Pressable
+          onPress={() => setFilter('completed')}
+          sx={{
+            flex: 1,
+            py: '$2',
+            px: '$3',
+            borderRadius: '$md',
+            bg: filter === 'completed' ? '$green500' : theme.card,
+            borderWidth: 1,
+            borderColor: filter === 'completed' ? '$green500' : theme.border,
+            alignItems: 'center'
+          }}
+        >
+          <Text sx={{ color: filter === 'completed' ? '$white' : theme.text, fontSize: '$sm', fontWeight: '600' }}>
+            Completados ({getStats.completed})
+          </Text>
+        </Pressable>
+      </HStack>
+
+      {/* Etiquetas */}
+      <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$3' }}>
+        <Text sx={{ color: theme.text, fontSize: '$lg', fontWeight: 'bold' }}>
           Etiquetas
         </Text>
-        <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '600' }}>
-          {items.length} {items.length === 1 ? 'elemento' : 'elementos'}
+        <Text sx={{ color: theme.text, fontSize: '$sm', fontWeight: '600', opacity: 0.7 }}>
+          {getFilteredItems.length} {getFilteredItems.length === 1 ? 'elemento' : 'elementos'}
         </Text>
       </HStack>
       <HStack sx={{ mb: '$4', flexWrap: 'wrap', gap: '$2' }}>
@@ -302,19 +604,19 @@ export default function ListDetailScreen() {
               key={tagIds[idx] || idx}
               alignItems="center"
               sx={{
-                bg: '$gray600',
+                bg: '#3b82f6',
                 borderRadius: '$full',
                 minWidth: 50,
-                height: '$6',
+                height: '$7',
                 px: '$3',
                 justifyContent: 'center',
               }}
             >
               <Pressable onPress={() => selectTag(idx)}>
-                <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
+                <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '500' }}>{tagName}</Text>
               </Pressable>
               {selectedTag === idx && (
-                <Pressable onPress={() => removeTag(idx)} sx={{ ml: '$1' }}>
+                <Pressable onPress={() => removeTag(idx)} sx={{ ml: '$2' }}>
                   <Icon as={MaterialIcons} name="close" size="xs" color="$white" />
                 </Pressable>
               )}
@@ -387,15 +689,14 @@ export default function ListDetailScreen() {
     <>
       <Stack.Screen options={{ title: listName || `Lista ${listId}` }} />
 
-      <Box sx={{ flex: 1, bg }}>
+      <Box sx={{ flex: 1, bg: theme.background }}>
         <FlatList
           ref={listRef}
-          data={items}
+          data={getFilteredItems}
           keyExtractor={(_, i) => i.toString()}
           renderItem={renderItem}
           ListHeaderComponent={renderHeader}
-          ListFooterComponent={renderFooter}
-          contentContainerStyle={{ paddingBottom: 80 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
           showsVerticalScrollIndicator
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -459,7 +760,7 @@ export default function ListDetailScreen() {
           >
             <Box 
               sx={{ 
-                bg,
+                bg: theme.card,
                 px: '$4',
                 py: '$4',
                 borderTopLeftRadius: '$2xl',
@@ -470,7 +771,7 @@ export default function ListDetailScreen() {
                 shadowRadius: 8,
               }}
             >
-            <Text sx={{ color: '$white', fontSize: '$lg', fontWeight: 'bold', mb: '$3' }}>
+            <Text sx={{ color: theme.text, fontSize: '$lg', fontWeight: 'bold', mb: '$3' }}>
               Agregar elemento
             </Text>
             <HStack sx={{ gap: '$2', alignItems: 'center', mb: '$2' }}>
@@ -522,6 +823,119 @@ export default function ListDetailScreen() {
           </Animated.View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Modal de vista completa */}
+      <Modal
+        visible={showViewModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowViewModal(false)}
+      >
+        <Pressable 
+          onPress={() => setShowViewModal(false)}
+          style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)', padding: 20 }}
+        >
+          <Pressable onPress={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 450 }}>
+            <Box sx={{ bg: theme.card, p: '$4', borderRadius: '$lg', maxHeight: MAX_LIST_HEIGHT }}>
+              <HStack sx={{ justifyContent: 'space-between', alignItems: 'center', mb: '$3' }}>
+                <Text sx={{ color: theme.text, fontSize: '$lg', fontWeight: 'bold', flex: 1 }}>
+                  Contenido completo
+                </Text>
+                <Pressable onPress={() => setShowViewModal(false)} sx={{ ml: '$2' }}>
+                  <Icon as={MaterialIcons} name="close" size="md" color={theme.text} />
+                </Pressable>
+              </HStack>
+              
+              <ScrollView style={{ maxHeight: MAX_LIST_HEIGHT - 120 }}>
+                <Text style={{ 
+                  color: theme.text, 
+                  fontSize: 16, 
+                  lineHeight: 24,
+                  flexWrap: 'wrap'
+                }}>
+                  {viewingItem}
+                </Text>
+              </ScrollView>
+            </Box>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Modal de edición */}
+      <Modal
+        visible={showEditModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowEditModal(false);
+          setEditingItem(null);
+          setEditContent('');
+        }}
+      >
+        <Pressable 
+          onPress={() => {
+            setShowEditModal(false);
+            setEditingItem(null);
+            setEditContent('');
+          }}
+          style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 20 }}
+        >
+          <Pressable onPress={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 450 }}>
+            <Box sx={{ bg: theme.card, p: '$4', borderRadius: '$lg', maxHeight: MAX_LIST_HEIGHT }}>
+              <Text sx={{ color: theme.text, fontSize: '$lg', fontWeight: 'bold', mb: '$3' }}>
+                Editar elemento
+              </Text>
+              
+              <ScrollView style={{ maxHeight: MAX_LIST_HEIGHT - 200 }}>
+                <TextInput
+                  style={[styles.editInput, { color: theme.text, borderColor: theme.border, minHeight: 120 }]}
+                  value={editContent}
+                  onChangeText={setEditContent}
+                  placeholder="Contenido del elemento"
+                  placeholderTextColor="rgba(255,255,255,0.5)"
+                  multiline
+                  textAlignVertical="top"
+                />
+              </ScrollView>
+
+              <HStack sx={{ gap: '$2', mt: '$4' }}>
+                <Pressable
+                  onPress={() => {
+                    setShowEditModal(false);
+                    setEditingItem(null);
+                    setEditContent('');
+                  }}
+                  sx={{
+                    flex: 1,
+                    bg: '$gray600',
+                    py: '$3',
+                    borderRadius: '$md',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text sx={{ color: '$white', fontWeight: '600' }}>Cancelar</Text>
+                </Pressable>
+                <Pressable
+                  onPress={saveEditItem}
+                  disabled={!editContent.trim()}
+                  sx={{
+                    flex: 1,
+                    bg: '$blue500',
+                    py: '$3',
+                    borderRadius: '$md',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    opacity: !editContent.trim() ? 0.5 : 1,
+                  }}
+                >
+                  <Text sx={{ color: '$white', fontWeight: '600' }}>Guardar</Text>
+                </Pressable>
+              </HStack>
+            </Box>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
@@ -549,5 +963,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     color: '#fff',
+  },
+  editInput: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    width: '100%',
   },
 });
