@@ -7,6 +7,107 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.2.0] - 2025-11-09
+
+### ✨ Añadido
+
+#### 📝 Nueva Pantalla de Notas
+- **CRUD Completo**: Crear, leer, actualizar y eliminar notas
+- **Búsqueda Full-Text**: Búsqueda en tiempo real en título y contenido
+- **Paginación**: Navegación con botones Anterior/Siguiente
+- **Modal de Edición**: Diseño moderno para editar notas
+- **Sistema de Etiquetas**: Soporte completo para tags
+- **Vista de Cards**: Preview del contenido con truncado
+- **Integración Backend**: Endpoints `/notes`, `/notes/search`, `/notes/{noteId}`
+
+#### 💭 Mejoras en Pensamientos
+- **Modal de Edición/Eliminación**: Click en pensamiento abre modal
+- **Paginación Bidireccional**: Navegación Anterior/Siguiente con historial
+- **Filtro de Etiquetas Expandible**: Botón se transforma en box de filtros
+- **Autocompletado de Tags**: Estilo idéntico a Chat con sugerencias en chips
+- **Límite Editable**: Input para cambiar cantidad de resultados
+- **Contador de Total**: Muestra total de pensamientos en BD (no solo página actual)
+- **Limpieza Automática**: Filtros se limpian al cerrar el box
+- **Botón Eliminar Mejorado**: Icono circular con Ionicons
+
+#### 🎨 Tema Moderno Unificado
+- **Nuevo Esquema de Colores**: Aplicado a todas las pantallas
+  - Dark: `#0A0E27` (bg), `#1A1F3A` (cards), `#FFFFFF` (text)
+  - Light: `#F5F7FA` (bg), `#FFFFFF` (cards), `#1A1F3A` (text)
+- **Consistencia Visual**: Chat, Pensamientos, Notas, Listas e Info
+- **Transiciones Suaves**: Animaciones con LayoutAnimation
+
+#### 🧭 Navegación Mejorada
+- **Nueva Pestaña Notas**: Icono `doc.text.fill` 📄
+- **Iconos Actualizados**: 
+  - Chat: `message.circle.fill` 💬
+  - Pensamientos: `tray.full.fill` 📥
+  - Notas: `doc.text.fill` 📄
+  - Listas: `list.bullet` 📋
+  - Info: `house.fill` 🏠
+- **Mapeo de Iconos**: SF Symbols ↔ Material Icons correctamente mapeados
+
+### 🔧 Corregido
+
+#### Paginación
+- **Thoughts**: Aplicar filtros ahora resetea a página 1
+- **Navegación Bidireccional**: Historial de páginas para volver correctamente
+- **LastKey Management**: Uso correcto de `lastKey` en paginación
+- **Total Count**: Cálculo correcto del total de pensamientos (no cambia al filtrar)
+
+#### UI/UX
+- **Modal de Edición**: Botones bien alineados (Eliminar circular a la izquierda)
+- **Icono de Eliminar**: Ionicons `trash` correctamente centrado
+- **Filtros de Tags**: Se limpian automáticamente al cerrar
+- **Iconos de Navegación**: Todos visibles y correctamente renderizados
+
+### 🎨 Mejorado
+
+#### Paginación Avanzada
+- **Cursor-based Pagination**: Implementación completa con `lastKey`
+- **Historial de Páginas**: Array `pageHistory` para navegación bidireccional
+- **Reset Inteligente**: Aplicar filtros resetea paginación automáticamente
+- **Custom LastKey**: Parámetro opcional para control fino de paginación
+
+#### Sistema de Caché
+- **Caché Inteligente**: No guarda resultados filtrados
+- **Invalidación Automática**: Se limpia al aplicar filtros
+- **TTL Configurable**: 2 minutos para thoughts
+- **Logs Detallados**: Información clara de operaciones de caché
+
+#### Búsqueda
+- **Full-Text Search**: Implementado en Notas
+- **Debouncing**: Búsqueda después de 300ms de inactividad
+- **Resultados por Relevancia**: Ordenados por score
+- **Snippets**: Contexto alrededor del match
+
+### 📝 Cambios Técnicos
+
+#### API Integration
+- **Paginación Backend**: Respuestas con `{ items, count, hasMore, lastKey }`
+- **Notes Endpoints**: GET, POST, PUT, DELETE, SEARCH
+- **Thoughts Pagination**: Actualizado para usar respuesta paginada
+- **Messages Pagination**: Actualizado para usar respuesta paginada
+
+#### Componentes
+- **IconSymbol**: Mapeo agregado para `doc.text.fill` y `list.bullet`
+- **Modal Reutilizable**: Diseño consistente entre Thoughts y Notes
+- **Theme Object**: Estructura unificada en todas las pantallas
+
+#### Estado y Hooks
+- **pageHistory**: Array para historial de navegación
+- **isLoadingTotal**: Flag para prevenir múltiples cálculos
+- **showEditModal**: Control de modal de edición
+- **searchQuery**: Estado para búsqueda en tiempo real
+
+### 📊 Estadísticas
+- **Archivos Modificados**: 7
+- **Líneas Agregadas**: 1,475
+- **Líneas Eliminadas**: 102
+- **Nuevo Archivo**: `app/(tabs)/notes.tsx` (631 líneas)
+
+---
+
 ## [1.1.0] - 2025-11-09
 
 ### ✨ Añadido

@@ -426,7 +426,7 @@ export default function ChatScreen() {
     >
       <Box style={{ paddingTop: insets.top }} sx={{ flex: 1, bg: theme.background, px: '$3', pb: '$2' }}>
         <Text sx={{ color: theme.text, fontSize: 24, fontWeight: 'bold', mb: 16, mt: 30 }}>
-          Saphire Chat
+          Zafira Chat
         </Text>
 
         <FlatList<Message>
