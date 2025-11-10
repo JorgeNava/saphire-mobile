@@ -1,19 +1,37 @@
-# 📱 App de Mensajes - React Native + Expo
+# 📱 Saphire Mobile - Tu Segundo Cerebro
 
-Aplicación móvil desarrollada con **React Native** y **Expo** que permite a los usuarios enviar mensajes de texto o grabaciones de voz, los cuales son enviados a una API gestionada por AWS API Gateway. Además, permite consultar, filtrar y editar los mensajes enviados.
+Aplicación móvil desarrollada con **React Native** y **Expo** que funciona como tu asistente personal inteligente. Permite gestionar mensajes, pensamientos, notas y listas, todo integrado con IA y sincronizado con un backend serverless en AWS.
+
+> **Versión actual**: 1.2.0  
+> **Backend**: Saphire Backend v0.0.4
 
 ---
 
 ## 🚀 Tecnologías usadas
 
-- **React Native** (Expo)
-- **expo-router** para navegación
-- **react-native-reanimated** para animaciones
-- **@react-native-community/datetimepicker** para selección de fechas
-- **react-native-toast-message** para notificaciones
+### Frontend
+- **React Native** (Expo SDK 52)
 - **TypeScript** para tipado estático
-- **AWS API Gateway** como backend de servicios
-- **UUID** para identificación única de mensajes
+- **expo-router** para navegación con tabs
+- **@expo/vector-icons** (Ionicons, MaterialIcons)
+- **@react-native-community/datetimepicker** para selección de fechas
+- **react-native-reanimated** para animaciones
+- **@gluestack-ui/themed** para componentes UI
+
+### Backend
+- **AWS API Gateway** (HTTP API)
+- **AWS Lambda** (Node.js 18.x)
+- **Amazon DynamoDB** para persistencia
+- **Amazon S3** para archivos adjuntos
+- **OpenAI GPT-4 Turbo** para clasificación IA
+- **OpenAI Whisper** para transcripción de audio
+
+### Características Técnicas
+- ✅ Cursor-based pagination
+- ✅ Full-text search
+- ✅ Real-time tag autocomplete
+- ✅ Offline-first con caché local
+- ✅ Dark/Light theme support
 
 ---
 
@@ -73,67 +91,233 @@ Y luego hacer el build con EAS.
 
 ## 🧭 Pantallas disponibles
 
-### 1. **Enviar mensaje (`/send`)**
+### 💬 Chat
+- Envío de mensajes de texto y audio
+- Grabación de voz con visualización en tiempo real
+- Sistema de etiquetas con autocompletado
+- Historial de conversación con paginación
+- Integración con IA para clasificación automática
 
-- Campo de texto para mensaje.
-- Botón para enviar texto (POST a `/text`).
-- Grabadora de audio y envío (POST a endpoint de archivo).
-- Acordeón para agregar `classification` si se desea.
-- Loader durante envíos.
+### 💭 Pensamientos
+- Lista de pensamientos con paginación bidireccional
+- **Modal de edición/eliminación** al hacer click
+- Filtros avanzados:
+  - Por etiquetas (con autocompletado)
+  - Por fecha de creación
+- Límite de resultados editable
+- Contador de total en BD
+- Caché inteligente (no guarda resultados filtrados)
 
-### 2. **Mensajes (`/messages`)**
+### 📝 Notas (NUEVO)
+- **CRUD completo**: Crear, editar, eliminar notas
+- **Búsqueda full-text** en tiempo real
+- Paginación con botones Anterior/Siguiente
+- Modal de edición con diseño moderno
+- Soporte para etiquetas
+- Vista de cards con preview del contenido
 
-- Lista de todos los mensajes recibidos desde la API.
-- Filtros:
-  - Tipo de entrada (texto / audio).
-  - Clasificación.
-  - `usedAI`: cualquiera / sí / no.
-  - Rango de fechas de creación y última actualización.
-- Se oculta el campo "Actualizado" si `lastUpdated` está vacío.
-- Dropdown animado para filtros por fecha.
+### 📋 Listas
+- Gestión de listas con items
+- Agregar/eliminar items dinámicamente
+- Sistema de etiquetas
+- Vista detallada por lista
 
----
-
-## ✅ Funcionalidades actuales
-
-- ✅ Envío de mensajes de texto a AWS API Gateway
-- ✅ Envío de audios usando FormData con metadatos
-- ✅ Filtros dinámicos con query params
-- ✅ Visualización de mensajes en lista
-- ✅ Layout responsive y estilizado
-- ✅ Uso de Toasts para feedback al usuario
-- ✅ Acordeón animado para mostrar campos opcionales
-
----
-
-## 📝 Lista de tareas por hacer
-
-- [ ] Integrar autenticación (Firebase/Auth0/etc.)
-- [ ] Permitir edición de mensajes de texto
-- [ ] Permitir reemplazar audio por uno nuevo
-- [ ] Soporte para múltiples usuarios
-- [ ] Subir grabaciones de audio a S3 directamente
-- [ ] Mejorar interfaz para modo oscuro
-- [ ] Agregar tests unitarios
-- [ ] Guardar clasificaciones previas en local storage
-- [ ] Implementar estado global (Zustand o Redux)
-- [ ] Agregar loader general y control de errores global
+### ℹ️ Info
+- Información de la aplicación
+- Tecnologías utilizadas
+- Pantallas disponibles
 
 ---
 
-## 💡 Ideas por integrar
+## ✨ Funcionalidades Destacadas
 
-- 🎙 Transcripción automática de mensajes de voz usando AWS Transcribe
-- 🧠 Clasificador con IA en frontend para sugerir clasificación
-- 📊 Dashboard de uso por usuario
-- 📎 Adjuntar imágenes a mensajes
-- 🔔 Notificaciones push usando Expo Notifications
-- 🌐 Versión web usando `expo-router` y `expo-web`
-- Sistema de Notas
-    - Contraseña y encriptacion de datos
-- Base de Conocimientos (tecnicos y diarios - aws, recetas, etc...)
-    - Generar conocimiento a traves de mis interacciones diarias
+### 🎯 Sistema de Etiquetas
+- Autocompletado inteligente mientras escribes
+- Creación automática de tags si no existen
+- Filtrado por múltiples etiquetas (lógica OR)
+- Origen de tags: Manual o IA
+- Contador de uso por tag
+
+### 📄 Paginación Avanzada
+- **Cursor-based pagination** con `lastKey`
+- Navegación bidireccional (Anterior/Siguiente)
+- Historial de páginas para volver atrás
+- Límite de resultados configurable
+- Indicador de página actual
+
+### 🔍 Búsqueda Inteligente
+- Full-text search en notas
+- Búsqueda en título y contenido
+- Resultados ordenados por relevancia
+- Snippets con contexto del match
+- Búsqueda en tiempo real (debounced)
+
+### 💾 Caché Local
+- Almacenamiento offline-first
+- Sincronización en background
+- Invalidación inteligente
+- TTL configurable por recurso
+- No cachea resultados filtrados
+
+### 🎨 Tema Moderno
+- Soporte Dark/Light mode
+- Colores consistentes en toda la app
+- Transiciones suaves
+- Diseño Material Design
+- SF Symbols en iOS, Material Icons en Android
 
 ---
+
+## 🔌 Integración con Backend
+
+### Endpoints Implementados
+
+#### Messages
+```
+GET    /messages?conversationId=X&limit=50&sortOrder=asc
+POST   /messages
+POST   /messages/audio
+GET    /messages/upload-url
+PUT    /messages/{conversationId}/{timestamp}
+DELETE /messages/{conversationId}/{timestamp}
+```
+
+#### Thoughts
+```
+GET    /thoughts?userId=X&limit=50&sortOrder=desc&tagNames=trabajo
+POST   /thoughts
+GET    /thoughts/{thoughtId}
+PUT    /thoughts/{thoughtId}
+DELETE /thoughts/{thoughtId}
+```
+
+#### Notes (NUEVO)
+```
+GET    /notes?userId=X&limit=20&sortOrder=desc
+GET    /notes/search?userId=X&q=query
+POST   /notes
+GET    /notes/{noteId}
+PUT    /notes/{noteId}
+DELETE /notes/{noteId}
+```
+
+#### Lists
+```
+GET    /lists?userId=X
+POST   /lists
+GET    /lists/{listId}
+PUT    /lists/{listId}
+DELETE /lists/{listId}
+POST   /lists/{listId}/items
+DELETE /lists/{listId}/items/{itemId}
+```
+
+#### Tags
+```
+GET    /tags?userId=X
+POST   /tags
+GET    /tags/{tagId}
+PUT    /tags/{tagId}
+DELETE /tags/{tagId}
+```
+
+### Formato de Respuesta Paginada
+
+```typescript
+{
+  items: T[],              // Items de la página actual
+  count: number,           // Cantidad retornada
+  scannedCount: number,    // Items evaluados
+  lastKey: string | null,  // Token para siguiente página
+  hasMore: boolean         // true si hay más páginas
+}
+```
+
+---
+
+## 📝 Roadmap
+
+### ✅ Completado (v1.2.0)
+- ✅ Pantalla de Notas con CRUD completo
+- ✅ Búsqueda full-text en Notas
+- ✅ Modal de edición en Pensamientos
+- ✅ Paginación bidireccional
+- ✅ Sistema de etiquetas con autocompletado
+- ✅ Tema moderno Dark/Light
+- ✅ Caché local inteligente
+- ✅ Integración completa con backend v0.0.4
+
+### 🚧 En Progreso
+- [ ] Adjuntar archivos a notas (imágenes, PDFs)
+- [ ] Soft delete y papelera de reciclaje
+- [ ] Sincronización offline mejorada
+- [ ] Tests unitarios y E2E
+
+### 🔮 Futuro
+- [ ] Autenticación con AWS Cognito
+- [ ] Soporte multi-usuario
+- [ ] Notificaciones push
+- [ ] Versión web con expo-web
+- [ ] Dashboard de estadísticas
+- [ ] Encriptación end-to-end
+- [ ] Base de conocimientos
+- [ ] Exportar/Importar datos
+- [ ] Compartir notas y listas
+- [ ] Widgets para iOS/Android
+
+---
+
+## 🎨 Diseño y UX
+
+### Paleta de Colores
+
+**Dark Mode** 🌙
+```
+Background: #0A0E27
+Cards:      #1A1F3A
+Text:       #FFFFFF
+Border:     #2A2F4A
+Accent:     #3B82F6
+```
+
+**Light Mode** ☀️
+```
+Background: #F5F7FA
+Cards:      #FFFFFF
+Text:       #1A1F3A
+Border:     #E5E7EB
+Accent:     #3B82F6
+```
+
+### Iconografía
+- **Chat**: `message.circle.fill` 💬
+- **Pensamientos**: `tray.full.fill` 📥
+- **Notas**: `doc.text.fill` 📄
+- **Listas**: `list.bullet` 📋
+- **Info**: `house.fill` 🏠
+
+---
+
+## 🤝 Contribuir
 
 Cualquier contribución, idea o sugerencia es bienvenida 🙌
+
+### Proceso
+1. Fork el proyecto
+2. Crea tu feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'feat: Add some AmazingFeature'`)
+4. Push a la branch (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
+
+---
+
+## 📄 Licencia
+
+Este proyecto es privado y de uso personal.
+
+---
+
+## 👤 Autor
+
+**Jorge Nava**
+- GitHub: [@JorgeNava](https://github.com/JorgeNava)

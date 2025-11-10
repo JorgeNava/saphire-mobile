@@ -44,11 +44,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="notes"
+        options={{
+          title: 'Notas',
+          tabBarIcon: ({ color }: { color: string }) => (
+            <IconSymbol size={28} name="doc.text.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="lists"
         options={{
           title: 'Listas',
           tabBarIcon: ({ color }: { color: string }) => (
-            <IconSymbol size={28} name="tray.full.fill" color={color} />
+            <IconSymbol size={28} name="list.bullet" color={color} />
           ),
         }}
       />

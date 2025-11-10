@@ -12,17 +12,20 @@ import {
 import { Buffer } from 'buffer';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   GestureResponderEvent,
   LayoutAnimation,
   ListRenderItem,
   Platform,
+  ScrollView,
+  TextInput,
   useColorScheme,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { cacheService } from '../../services/cacheService';
 
 interface Message {
   id: string;
@@ -32,13 +35,14 @@ interface Message {
   sentAt?: number;
 }
 
-// Endpoints correctos para mensajes
-const TEXT_ENDPOINT =
-  'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages';
-const AUDIO_UPLOAD_ENDPOINT =
-  'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages/upload-url';
-const AUDIO_NOTIFY_ENDPOINT =
-  'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com/messages/audio';
+// Endpoints para mensajes (temporalmente hasta migrar a thoughts)
+const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
+const TEXT_ENDPOINT = `${API_BASE}/messages`;
+const AUDIO_UPLOAD_ENDPOINT = `${API_BASE}/messages/upload-url`;
+const AUDIO_NOTIFY_ENDPOINT = `${API_BASE}/messages/audio`;
+
+// ConversationId del usuario
+const CONVERSATION_ID = 'user123';
 
 // Formatea timestamp como HH:mm
 const formatTime = (timestamp: number) => {
@@ -51,12 +55,16 @@ const formatTime = (timestamp: number) => {
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const theme = {
-    background: colorScheme === 'dark' ? '#1D3D47' : '#A1CEDC',
-    text: colorScheme === 'dark' ? '$white' : '$black',
+    background: isDark ? '#0A0E27' : '#F5F7FA',
+    card: isDark ? '#1A1F3A' : '#FFFFFF',
+    text: isDark ? '#FFFFFF' : '#1A1F3A',
+    border: isDark ? '#2A2F4A' : '#E5E7EB',
   };
-  const inputBg = colorScheme === 'dark' ? '#162E3C' : '#7DAEB5';
-  const inputBorder = colorScheme === 'dark' ? '#0F2128' : '#6B8B90';
+  const inputBg = isDark ? '#1A1F3A' : '#FFFFFF';
+  const inputBorder = isDark ? '#2A2F4A' : '#E5E7EB';
 
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', text: 'Hola, Jorge 👋', fromMe: false },
@@ -70,6 +78,158 @@ export default function ChatScreen() {
   const [micPressed, setMicPressed] = useState(false);
   const audioPlaceholderId = useRef<string | null>(null);
   const flatListRef = useRef<FlatList<Message>>(null);
+  
+  // Estados para autocompletado de etiquetas
+  const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
+  const [filteredTags, setFilteredTags] = useState<Array<{tagId: string; name: string}>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Cargar mensajes iniciales
+  useEffect(() => {
+    loadMessages();
+  }, []);
+
+  const loadMessages = async () => {
+    try {
+      // Intentar obtener del caché primero
+      const cachedMessages = await cacheService.getMessages();
+      if (cachedMessages && cachedMessages.length > 0) {
+        setMessages(cachedMessages);
+        console.log('✅ Mensajes cargados desde caché');
+        return;
+      }
+
+      // Si no hay caché, obtener del servidor
+      // NUEVO: API ahora retorna objeto paginado con { items, count, hasMore, lastKey }
+      const res = await fetch(`${TEXT_ENDPOINT}?conversationId=${CONVERSATION_ID}&limit=50&sortOrder=asc`);
+      if (res.ok) {
+        const data = await res.json();
+        
+        // CAMBIO: Ahora data.items en lugar de array directo
+        const messagesArray = data.items || [];
+        
+        // Convertir al formato esperado
+        const formattedMessages: Message[] = messagesArray.map((msg: any) => ({
+          id: msg.messageId || msg.id || String(Date.now()),
+          text: msg.content || msg.text || '',
+          fromMe: msg.sender === 'user123', // Determinar si es del usuario
+          status: 'sent' as const,
+          sentAt: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+        }));
+        
+        setMessages(formattedMessages);
+        
+        // Guardar en caché
+        await cacheService.setMessages(formattedMessages);
+        console.log('✅ Mensajes guardados en caché');
+      }
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      // Si hay error, mantener el mensaje de bienvenida
+      setMessages([{ id: '1', text: 'Hola, Jorge 👋', fromMe: false }]);
+    }
+  };
+
+  // Iniciar sincronización en background de mensajes
+  useEffect(() => {
+    cacheService.startMessagesSync(async () => {
+      const res = await fetch(`${TEXT_ENDPOINT}?conversationId=${CONVERSATION_ID}&limit=50&sortOrder=asc`);
+      const data = await res.json();
+      
+      // CAMBIO: Usar data.items en lugar de array directo
+      const messagesArray = data.items || [];
+      
+      const formattedMessages: Message[] = messagesArray.map((msg: any) => ({
+        id: msg.messageId || msg.id || String(Date.now()),
+        text: msg.content || msg.text || '',
+        fromMe: msg.sender === 'user123',
+        status: 'sent' as const,
+        sentAt: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
+      }));
+      
+      setMessages(formattedMessages);
+      return formattedMessages;
+    });
+
+    return () => {
+      cacheService.stopBackgroundSync('cache_messages');
+    };
+  }, []);
+
+  // Cargar etiquetas disponibles
+  useEffect(() => {
+    loadAvailableTags();
+  }, []);
+
+  const loadAvailableTags = async () => {
+    try {
+      // Intentar obtener del caché primero
+      const cachedTags = await cacheService.getTags();
+      if (cachedTags) {
+        setAvailableTags(cachedTags);
+        console.log('✅ Tags cargados desde caché');
+        return;
+      }
+
+      // Si no hay caché, obtener del servidor
+      const res = await fetch(`${API_BASE}/tags?userId=user123`);
+      if (res.ok) {
+        const tags = await res.json();
+        setAvailableTags(tags);
+        
+        // Guardar en caché
+        await cacheService.setTags(tags);
+        console.log('✅ Tags guardados en caché');
+      }
+    } catch (err) {
+      console.error('Error loading tags:', err);
+    }
+  };
+
+  // Iniciar sincronización en background de etiquetas
+  useEffect(() => {
+    cacheService.startTagsSync(async () => {
+      const res = await fetch(`${API_BASE}/tags?userId=user123`);
+      const tags = await res.json();
+      setAvailableTags(tags); // Actualizar estado con datos frescos
+      return tags;
+    });
+
+    // Limpiar al desmontar el componente
+    return () => {
+      cacheService.stopBackgroundSync('cache_tags');
+    };
+  }, []);
+
+  // Filtrar etiquetas basado en el input
+  React.useEffect(() => {
+    if (!tags.trim() || !showTagsInput) {
+      if (showSuggestions) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      setShowSuggestions(false);
+      return;
+    }
+
+    const currentInput = tags.split(',').pop()?.trim().toLowerCase() || '';
+    
+    if (currentInput.length > 0) {
+      const filtered = availableTags.filter(tag => 
+        tag.name.toLowerCase().includes(currentInput)
+      );
+      setFilteredTags(filtered);
+      const shouldShow = filtered.length > 0;
+      if (shouldShow !== showSuggestions) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      setShowSuggestions(shouldShow);
+    } else {
+      if (showSuggestions) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      setShowSuggestions(false);
+    }
+  }, [tags, showTagsInput, availableTags]);
 
   const handleSend = async () => {
     if (!text.trim()) return;
@@ -111,6 +271,10 @@ export default function ChatScreen() {
           m.id === id ? { ...m, status: 'sent', sentAt: Date.now() } : m
         )
       );
+      
+      // Invalidar caché de mensajes y recargar
+      await cacheService.invalidateMessages();
+      await loadMessages();
     } catch (err) {
       console.error(err);
     } finally {
@@ -217,6 +381,15 @@ export default function ChatScreen() {
     setShowTagsInput(!showTagsInput);
   };
 
+  const selectTag = (tagName: string) => {
+    const currentTags = tags.split(',').map(t => t.trim()).filter(t => t);
+    // Remover el último tag incompleto y agregar el seleccionado
+    currentTags.pop();
+    currentTags.push(tagName);
+    setTags(currentTags.join(', ') + ', ');
+    setShowSuggestions(false);
+  };
+
   const handleMicPressIn = (e: GestureResponderEvent) => {
     if (!text.trim()) startRecording();
   };
@@ -253,7 +426,7 @@ export default function ChatScreen() {
     >
       <Box style={{ paddingTop: insets.top }} sx={{ flex: 1, bg: theme.background, px: '$3', pb: '$2' }}>
         <Text sx={{ color: theme.text, fontSize: 24, fontWeight: 'bold', mb: 16, mt: 30 }}>
-          Saphire Chat
+          Zafira Chat
         </Text>
 
         <FlatList<Message>
@@ -264,40 +437,117 @@ export default function ChatScreen() {
           renderItem={renderItem}
         />
 
-        <Pressable onPress={toggleTags} sx={{ mb: '$2' }}>
-          <Text sx={{ color: theme.text, ml: '$2' }}>
-            Etiquetas {showTagsInput ? '▲' : '▼'}
-          </Text>
-        </Pressable>
         {showTagsInput && (
-          <Input sx={{
-            bg: '$gray800',
+          <Box sx={{ mb: '$3', bg: inputBg, borderRadius: '$lg', borderWidth: 1, borderColor: inputBorder, p: '$3' }}>
+            <HStack alignItems="center" justifyContent="space-between" sx={{ mb: '$2' }}>
+              <HStack alignItems="center" sx={{ gap: '$2' }}>
+                <Icon as={MaterialIcons} name="label" size="sm" color="$white" />
+                <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '600' }}>
+                  Etiquetas
+                </Text>
+              </HStack>
+              <Pressable onPress={toggleTags}>
+                <Icon as={MaterialIcons} name="close" size="sm" color="$white" />
+              </Pressable>
+            </HStack>
+            <Input sx={{
+              bg: 'transparent',
+              borderRadius: '$md',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.3)'
+            }}>
+              <InputField
+                value={tags}
+                onChangeText={setTags}
+                placeholder="trabajo, urgente, reunión..."
+                placeholderTextColor="rgba(255,255,255,0.5)"
+                sx={{ color: '$white', fontSize: '$sm' }}
+              />
+            </Input>
+            <Text sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '$xs', mt: '$2' }}>
+              Separa las etiquetas con comas
+            </Text>
+            {showSuggestions && (
+              <Box sx={{ mt: '$3', pt: '$3', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' }}>
+                <Text sx={{ color: '$white', fontSize: '$xs', fontWeight: '600', mb: '$2' }}>
+                  Sugerencias:
+                </Text>
+                <ScrollView 
+                  style={{ maxHeight: 120 }}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="always"
+                >
+                  <HStack sx={{ flexWrap: 'wrap', gap: '$2', pb: '$1' }}>
+                    {filteredTags.map(tag => (
+                      <Pressable
+                        key={tag.tagId}
+                        onPress={() => selectTag(tag.name)}
+                        sx={{
+                          bg: '$blue500',
+                          px: '$3',
+                          py: '$1.5',
+                          borderRadius: '$full',
+                        }}
+                      >
+                        <Text sx={{ color: '$white', fontSize: '$xs' }}>{tag.name}</Text>
+                      </Pressable>
+                    ))}
+                  </HStack>
+                </ScrollView>
+              </Box>
+            )}
+          </Box>
+        )}
+        <Pressable 
+          onPress={toggleTags} 
+          sx={{ 
+            mb: '$2',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: '$2',
+            bg: showTagsInput ? 'transparent' : inputBg,
+            px: '$3',
+            py: '$2',
             borderRadius: '$md',
             borderWidth: 1,
-            borderColor: '$white',
-            mb: '$3'
-          }}>
-            <InputField
-              value={tags}
-              onChangeText={setTags}
-              placeholder="Añade etiquetas a tu mensaje... (ej: trabajo, urgente, reunión)"
-              sx={{ color: '$white' }}
-            />
-          </Input>
-        )}
+            borderColor: showTagsInput ? 'transparent' : inputBorder
+          }}
+        >
+          <Icon as={MaterialIcons} name="label-outline" size="sm" color={showTagsInput ? theme.text : '$white'} />
+          <Text sx={{ color: showTagsInput ? theme.text : '$white', fontSize: '$sm' }}>
+            {showTagsInput ? 'Ocultar etiquetas' : 'Agregar etiquetas'}
+          </Text>
+        </Pressable>
 
-        <HStack alignItems="center" sx={{ mt: '$2', gap: '$2' }}>
-          <Input
+        <HStack alignItems="flex-end" sx={{ mt: '$2', gap: '$2' }}>
+          <Box
             flex={1}
-            sx={{ bg: inputBg, borderWidth: 1, borderColor: inputBorder, borderRadius: '$full', px: '$4', py: '$2' }}
+            sx={{ 
+              bg: inputBg, 
+              borderWidth: 1, 
+              borderColor: inputBorder, 
+              borderRadius: '$lg', 
+              px: '$4', 
+              py: '$2',
+              minHeight: '$10',
+              maxHeight: 144
+            }}
           >
-            <InputField
+            <TextInput
               value={text}
               onChangeText={setText}
               placeholder="Escribe tu mensaje..."
-              sx={{ color: '$white' }}
+              placeholderTextColor="rgba(255,255,255,0.6)"
+              style={{
+                color: '#fff',
+                fontSize: 16,
+                maxHeight: 128,
+                textAlignVertical: 'top'
+              }}
+              multiline
             />
-          </Input>
+          </Box>
 
           <Pressable
             onPressIn={!text.trim() ? handleMicPressIn : undefined}
