@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
@@ -48,9 +48,12 @@ export default function TagsScreen() {
 
   // Estados
   const [tags, setTags] = useState<Tag[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]); // Todos los tags del backend
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [backendSearchTerm, setBackendSearchTerm] = useState(''); // Para búsqueda en backend
+  const [isSearching, setIsSearching] = useState(false);
   const [limit, setLimit] = useState(25);
   const [lastKey, setLastKey] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -74,9 +77,10 @@ export default function TagsScreen() {
     setLoading(true);
     try {
       // Intentar caché solo en primera carga sin búsqueda
-      if (reset && !searchTerm) {
+      if (reset && !backendSearchTerm) {
         const cached = await cacheService.get('cache_tags');
         if (cached && Array.isArray(cached)) {
+          setAllTags(cached as Tag[]);
           setTags(cached as Tag[]);
           console.log('✅ Tags cargados desde caché');
         }
@@ -88,10 +92,10 @@ export default function TagsScreen() {
         sortOrder: 'desc',
       });
 
-      if (searchTerm) params.append('searchTerm', searchTerm);
+      if (backendSearchTerm) params.append('searchTerm', backendSearchTerm);
       if (!reset && lastKey) params.append('lastKey', lastKey);
 
-      console.log('🔄 Fetching tags:', { reset, lastKey, searchTerm, limit });
+      console.log('🔄 Fetching tags:', { reset, lastKey, backendSearchTerm, limit });
 
       const response = await fetch(`${API_BASE}/tags?${params}`);
       if (!response.ok) {
@@ -105,13 +109,15 @@ export default function TagsScreen() {
       
       // Si es un array simple (formato antiguo)
       if (Array.isArray(data)) {
-        const newTags = reset ? data : [...tags, ...data];
+        const newTags = reset ? data : [...allTags, ...data];
+        setAllTags(newTags);
         setTags(newTags);
         setHasMore(false);
         setTotalCount(newTags.length);
       } else {
         // Formato nuevo con paginación
-        const newTags = reset ? data.items : [...tags, ...data.items];
+        const newTags = reset ? data.items : [...allTags, ...data.items];
+        setAllTags(newTags);
         setTags(newTags);
         setLastKey(data.lastKey || null);
         setHasMore(!!data.lastKey);
@@ -124,7 +130,7 @@ export default function TagsScreen() {
       }
 
       // Guardar en caché solo si es primera carga sin búsqueda
-      if (reset && !searchTerm && Array.isArray(data)) {
+      if (reset && !backendSearchTerm && Array.isArray(data)) {
         await cacheService.set('cache_tags', data, 10 * 60 * 1000);
         console.log('✅ Tags guardados en caché');
       }
@@ -140,15 +146,46 @@ export default function TagsScreen() {
     }
   };
 
-  // Debounce para búsqueda
+  // Filtrado local en tiempo real
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLastKey(null);
-      fetchTags(true);
-    }, 500);
+    if (!searchTerm.trim()) {
+      // Si no hay búsqueda, mostrar todos los tags
+      setTags(allTags);
+    } else {
+      // Filtrar localmente mientras se escribe
+      const searchLower = searchTerm.toLowerCase();
+      const filtered = allTags.filter(tag => 
+        tag.name.toLowerCase().includes(searchLower)
+      );
+      setTags(filtered);
+    }
+  }, [searchTerm, allTags]);
 
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
+  // Búsqueda en backend al presionar Enter
+  const handleSearchSubmit = () => {
+    setBackendSearchTerm(searchTerm);
+    setLastKey(null);
+    setIsSearching(true);
+    fetchTags(true).finally(() => setIsSearching(false));
+  };
+
+  // Limpiar búsqueda
+  const clearSearch = () => {
+    setSearchTerm('');
+    setBackendSearchTerm('');
+    setLastKey(null);
+    fetchTags(true);
+  };
+
+  // Efecto para búsqueda en backend cuando cambia backendSearchTerm
+  useEffect(() => {
+    if (backendSearchTerm !== searchTerm && backendSearchTerm !== '') {
+      // Solo si hay diferencia y no es vacío
+      return;
+    }
+    setLastKey(null);
+    fetchTags(true);
+  }, [backendSearchTerm]);
 
   // Efecto separado para cambio de límite
   useEffect(() => {
@@ -249,12 +286,12 @@ export default function TagsScreen() {
               Alert.alert('Error', 'No se pudo eliminar la etiqueta');
             }
           },
-        },
+        }
       ]
     );
   };
 
-  // Render tag card
+  // Render tag item
   const renderTag = ({ item: tag }: { item: Tag }) => (
     <Pressable
       onPress={() => router.push(`/tags/${tag.tagId}`)}
@@ -287,43 +324,71 @@ export default function TagsScreen() {
     </Pressable>
   );
 
-  // Render header - Memoizado para evitar re-renders
-  const renderHeader = useCallback(() => (
-    <View style={styles.header}>
-      {/* Search bar */}
-      <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Ionicons name="search" size={20} color={theme.placeholder} />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Buscar etiquetas..."
-          placeholderTextColor={theme.placeholder}
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {searchTerm ? (
-          <Pressable onPress={() => setSearchTerm('')}>
-            <Ionicons name="close-circle" size={20} color={theme.placeholder} />
-          </Pressable>
-        ) : null}
-      </View>
+  // Render header - Componente separado para evitar re-renders
+  const SearchHeader = useMemo(() => {
+    return (
+      <View style={styles.header}>
+        {/* Search bar */}
+        <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Ionicons name="search" size={20} color={theme.placeholder} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Buscar etiquetas (Enter para buscar en servidor)..."
+            placeholderTextColor={theme.placeholder}
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            onSubmitEditing={handleSearchSubmit}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+            blurOnSubmit={false}
+          />
+          {isSearching ? (
+            <ActivityIndicator size="small" color={theme.placeholder} />
+          ) : searchTerm ? (
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              {backendSearchTerm !== searchTerm && (
+                <Pressable onPress={handleSearchSubmit} style={{ padding: 4 }}>
+                  <Ionicons name="search-circle" size={24} color="#3B82F6" />
+                </Pressable>
+              )}
+              <Pressable onPress={clearSearch}>
+                <Ionicons name="close-circle" size={20} color={theme.placeholder} />
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+        
+        {/* Indicador de filtrado */}
+        {searchTerm && tags.length < allTags.length && !backendSearchTerm && (
+          <Text style={{ color: theme.placeholder, fontSize: 12, marginTop: 4, marginLeft: 12 }}>
+            Filtrando localmente. Presiona Enter para buscar en el servidor.
+          </Text>
+        )}
+        {backendSearchTerm && (
+          <Text style={{ color: '#3B82F6', fontSize: 12, marginTop: 4, marginLeft: 12 }}>
+            🔍 Buscando "{backendSearchTerm}" en el servidor
+          </Text>
+        )}
 
-      {/* Counter and limit selector */}
-      <View style={styles.counterRow}>
-        <Text style={[styles.counterText, { color: theme.text }]}>
-          Mostrando {tags.length} de {totalCount} etiquetas
-        </Text>
-        <Pressable
-          onPress={() => setShowLimitModal(true)}
-          style={[styles.limitButton, { backgroundColor: theme.card, borderColor: theme.border }]}
-        >
-          <Text style={[styles.limitText, { color: theme.text }]}>{limit}</Text>
-          <Ionicons name="chevron-down" size={16} color={theme.text} />
-        </Pressable>
+        {/* Counter and limit selector */}
+        <View style={styles.counterRow}>
+          <Text style={[styles.counterText, { color: theme.text }]}>
+            Mostrando {tags.length} de {totalCount} etiquetas
+          </Text>
+          <Pressable
+            onPress={() => setShowLimitModal(true)}
+            style={[styles.limitButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+          >
+            <Text style={[styles.limitText, { color: theme.text }]}>{limit}</Text>
+            <Ionicons name="chevron-down" size={16} color={theme.text} />
+          </Pressable>
+        </View>
       </View>
-    </View>
-  ), [searchTerm, tags.length, totalCount, limit, theme]);
+    );
+  }, [searchTerm, backendSearchTerm, isSearching, tags.length, allTags.length, totalCount, limit, theme]);
+
+  const renderHeader = useCallback(() => SearchHeader, [SearchHeader]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>

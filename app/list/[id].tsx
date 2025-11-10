@@ -323,10 +323,23 @@ export default function ListDetailScreen() {
 
   const loadAvailableTags = async () => {
     try {
+      // Intentar obtener del caché primero
+      const cachedTags = await cacheService.getTags();
+      if (cachedTags) {
+        setAvailableTags(cachedTags);
+        console.log('✅ Tags cargados desde caché (list detail)');
+        return;
+      }
+
+      // Si no hay caché, obtener del servidor
       const res = await fetch(`${API_BASE}/tags?userId=user123`);
       if (res.ok) {
         const tags = await res.json();
         setAvailableTags(tags);
+        
+        // Guardar en caché
+        await cacheService.setTags(tags);
+        console.log('✅ Tags guardados en caché (list detail)');
       }
     } catch (err) {
       console.error('Error loading tags:', err);

@@ -58,7 +58,9 @@ export default function ListsScreen() {
   const [newItems, setNewItems] = useState<string[]>(['']);
 
   // Estados para crear lista desde etiquetas
+  const [showTagPicker, setShowTagPicker] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
+  const [showActionMenu, setShowActionMenu] = useState(false);
   const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [customListName, setCustomListName] = useState('');
@@ -290,7 +292,7 @@ export default function ListsScreen() {
       Alert.alert('Éxito', `Lista "${list.name}" creada con ${list.thoughtsFound} pensamientos`);
 
       // Limpiar y cerrar
-      setShowTagModal(false);
+      setShowTagPicker(false);
       setSelectedTags([]);
       setCustomListName('');
       await fetchLists();
@@ -327,121 +329,197 @@ export default function ListsScreen() {
     });
   };
 
-  // Render proteg enkel si item existe
-  const renderListItem: ListRenderItem<List> = ({ item }) => {
-    if (!item || !item.listId) return null;
-    const MAX_TAGS_DISPLAY = 3;
-    const displayTags = item.tagNames?.slice(0, MAX_TAGS_DISPLAY) || [];
-    const remainingCount = (item.tagNames?.length || 0) - MAX_TAGS_DISPLAY;
-    
+  // Renderizar item de lista con UI mejorada
+  const renderListItem = ({ item }: { item: List }) => {
+    const displayTags = item.tagNames?.slice(0, 3) || [];
+    const remainingCount = (item.tagNames?.length || 0) - 3;
+    const itemCount = item.items?.length || 0;
+    const completedCount = item.items?.filter((i: any) => i.completed).length || 0;
+    const progress = itemCount > 0 ? (completedCount / itemCount) * 100 : 0;
+
     return (
-      <HStack
-        justifyContent="space-between"
-        alignItems="center"
-        sx={{ mb: '$2', bg: '$gray700', px: '$3', py: '$2', borderRadius: '$md' }}
+      <Pressable 
+        onPress={() => router.push(`/list/${item.listId}`)}
+        sx={{ mb: '$3' }}
       >
-        <Pressable onPress={() => router.push(`/list/${item.listId}`)} style={{ flex: 1, marginRight: 8 }}>
-          <VStack>
-            <Text sx={{ color: '$white', fontSize: '$lg' }}>{item.name}</Text>
-            <HStack sx={{ flexWrap: 'wrap', gap: '$1', mt: '$1' }}>
-              {displayTags.length > 0 ? (
-                <>
-                  {displayTags.map((tagName, idx) => (
-                    <Box key={item.tagIds[idx] || tagName} sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}>
-                      <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
-                    </Box>
-                  ))}
-                  {remainingCount > 0 && (
-                    <Box sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}>
-                      <Text sx={{ color: '$white', fontSize: '$xs' }}>+{remainingCount}</Text>
-                    </Box>
-                  )}
-                </>
-              ) : (
-                <Text sx={{ color: '$gray500', fontSize: '$xs' }}>Sin etiquetas</Text>
+        <Box
+          sx={{ 
+            bg: theme.card,
+            borderRadius: '$2xl',
+            p: '$4',
+            borderWidth: 1,
+            borderColor: theme.border,
+            shadowColor: '$black',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 3
+          }}
+        >
+          {/* Header con título y botón eliminar */}
+          <HStack justifyContent="space-between" alignItems="flex-start" sx={{ mb: '$3' }}>
+            <VStack flex={1} sx={{ mr: '$2' }}>
+              <Text sx={{ color: theme.text, fontSize: '$xl', fontWeight: 'bold', mb: '$1' }}>
+                {item.name}
+              </Text>
+              
+              {/* Estadísticas */}
+              {itemCount > 0 && (
+                <HStack alignItems="center" sx={{ gap: '$2' }}>
+                  <Text sx={{ color: theme.text, fontSize: '$sm', opacity: 0.7 }}>
+                    {completedCount}/{itemCount} completados
+                  </Text>
+                  <Box 
+                    sx={{ 
+                      width: 4, 
+                      height: 4, 
+                      borderRadius: '$full', 
+                      bg: theme.text,
+                      opacity: 0.3
+                    }} 
+                  />
+                  <Text sx={{ color: theme.text, fontSize: '$sm', opacity: 0.7 }}>
+                    {Math.round(progress)}%
+                  </Text>
+                </HStack>
               )}
-            </HStack>
-          </VStack>
-        </Pressable>
-        <HStack sx={{ gap: '$2', alignItems: 'center', flexShrink: 0 }}>
-          <Pressable onPress={() => router.push(`/list/${item.listId}`)}>
-            <Icon as={MaterialIcons} name="chevron-right" size="md" color="$white" />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              Alert.alert('Confirmar', '¿Eliminar esta lista?', [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                  text: 'Eliminar',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      const response = await fetch(`${API_BASE}/lists`, {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: 'user123', listId: item.listId }),
-                      });
+            </VStack>
 
-                      if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error('❌ Error al eliminar:', response.status, errorText);
-                        throw new Error(`Error ${response.status}`);
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                Alert.alert('Confirmar', '¿Eliminar esta lista?', [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        console.log('🗑️ Eliminando lista:', item.listId);
+                        
+                        const response = await fetch(`${API_BASE}/lists`, {
+                          method: 'DELETE',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ userId: 'user123', listId: item.listId }),
+                        });
+
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          console.error('❌ Error al eliminar:', response.status, errorText);
+                          Alert.alert(
+                            'Error al eliminar',
+                            `No se pudo eliminar la lista.\nCódigo: ${response.status}`
+                          );
+                          return;
+                        }
+
+                        console.log('✅ Lista eliminada exitosamente:', item.listId);
+                        await cacheService.invalidateLists();
+                        setLists(prev => prev.filter(l => l.listId !== item.listId));
+                        Alert.alert('Éxito', `Lista "${item.name}" eliminada correctamente`);
+                      } catch (err: any) {
+                        console.error('❌ Error completo al eliminar lista:', err);
+                        Alert.alert('Error', `No se pudo eliminar la lista.\n\n${err.message || 'Error desconocido'}`);
                       }
-
-                      console.log('✅ Lista eliminada:', item.listId);
-                      
-                      // Invalidar caché
-                      await cacheService.set('cache_lists', null, 0);
-                      
-                      // Actualizar UI
-                      setLists(prev => prev.filter(l => l.listId !== item.listId));
-                    } catch (err) {
-                      console.error('❌ Error completo:', err);
-                      Alert.alert('Error', 'No se pudo eliminar la lista');
-                    }
+                    },
                   },
-                },
-              ]);
-            }}
+                ]);
+              }}
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: '$full',
+                bg: 'rgba(239, 68, 68, 0.1)',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              <Icon as={MaterialIcons} name="delete" size="sm" color="$red500" />
+            </Pressable>
+          </HStack>
+
+          {/* Barra de progreso */}
+          {itemCount > 0 && (
+            <Box 
+              sx={{ 
+                height: 6, 
+                bg: isDark ? '#1E293B' : '#E5E7EB',
+                borderRadius: '$full',
+                overflow: 'hidden',
+                mb: '$3'
+              }}
+            >
+              <Box 
+                sx={{ 
+                  height: '100%', 
+                  width: `${progress}%`,
+                  bg: progress === 100 ? '$green500' : '$blue600',
+                  borderRadius: '$full'
+                }} 
+              />
+            </Box>
+          )}
+
+          {/* Etiquetas */}
+          <HStack sx={{ flexWrap: 'wrap', gap: '$2' }}>
+            {displayTags.length > 0 ? (
+              <>
+                {displayTags.map((tagName, idx) => (
+                  <Box 
+                    key={item.tagIds[idx] || tagName} 
+                    sx={{ 
+                      bg: '$blue500',
+                      px: '$3', 
+                      py: '$1.5', 
+                      borderRadius: '$full'
+                    }}
+                  >
+                    <Text sx={{ color: '$white', fontSize: '$xs', fontWeight: '500' }}>
+                      {tagName}
+                    </Text>
+                  </Box>
+                ))}
+                {remainingCount > 0 && (
+                  <Box sx={{ bg: '$gray500', px: '$3', py: '$1.5', borderRadius: '$full' }}>
+                    <Text sx={{ color: '$white', fontSize: '$xs', fontWeight: '500' }}>
+                      +{remainingCount}
+                    </Text>
+                  </Box>
+                )}
+              </>
+            ) : (
+              <Text sx={{ color: theme.text, fontSize: '$xs', opacity: 0.5 }}>
+                Sin etiquetas
+              </Text>
+            )}
+          </HStack>
+
+          {/* Indicador de más info */}
+          <HStack 
+            justifyContent="flex-end" 
+            alignItems="center" 
+            sx={{ mt: '$2', gap: '$1' }}
           >
-            <Icon as={MaterialIcons} name="delete" size="md" color="$red500" />
-          </Pressable>
-        </HStack>
-      </HStack>
+            <Text sx={{ color: '$blue500', fontSize: '$xs', fontWeight: '600' }}>
+              Ver detalles
+            </Text>
+            <Icon as={MaterialIcons} name="chevron-right" size="sm" color="$blue500" />
+          </HStack>
+        </Box>
+      </Pressable>
     );
   };
 
   return (
     <Box sx={{ flex: 1, bg: theme.background, px: '$4', pt: '$4' }}>
+      {/* Header */}
       <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$3', mt: 40 }}>
-        <Text sx={{ color: '$white', fontSize: 24, fontWeight: 'bold' }}>
+        <Text sx={{ color: theme.text, fontSize: 24, fontWeight: 'bold' }}>
           Listas
         </Text>
-        <Text sx={{ color: '$white', fontSize: 16, fontWeight: '600' }}>
+        <Text sx={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
           {lists.length} {lists.length === 1 ? 'lista' : 'listas'}
         </Text>
-      </HStack>
-
-      {/* Botones de acción */}
-      <HStack sx={{ gap: '$2', mb: '$3' }}>
-        <Button
-          onPress={openTagModal}
-          sx={{ flex: 1, bg: '$blue600', borderRadius: '$md' }}
-        >
-          <HStack sx={{ gap: '$2', alignItems: 'center' }}>
-            <Icon as={MaterialIcons} name="label" size="md" color="$white" />
-            <Text sx={{ color: '$white', fontWeight: '600' }}>Desde Etiquetas</Text>
-          </HStack>
-        </Button>
-        <Button
-          onPress={openModal}
-          sx={{ flex: 1, bg: '$green600', borderRadius: '$md' }}
-        >
-          <HStack sx={{ gap: '$2', alignItems: 'center' }}>
-            <Icon as={MaterialIcons} name="add" size="md" color="$white" />
-            <Text sx={{ color: '$white', fontWeight: '600' }}>Nueva Lista</Text>
-          </HStack>
-        </Button>
       </HStack>
 
       <FlatList
@@ -453,49 +531,74 @@ export default function ListsScreen() {
 
       <Modal visible={modalVisible} transparent animationType="slide">
         <Box sx={{ flex: 1, justifyContent: 'center', alignItems: 'center', bg: 'rgba(0,0,0,0.8)' }}>
-          <Box sx={{ bg: '$card', p: '$4', borderRadius: '$lg', width: '90%' }}>
-            <Input sx={{ mb: '$4', bg: 'transparent', borderWidth: 0 }}>
+          <Box sx={{ bg: theme.card, p: '$5', borderRadius: '$2xl', width: '90%', maxHeight: '85%', borderWidth: 1, borderColor: theme.border }}>
+            <Text sx={{ color: theme.text, fontSize: '$2xl', fontWeight: 'bold', mb: '$4' }}>
+              Nueva Lista
+            </Text>
+
+            <Text sx={{ mb: '$2', color: theme.text, fontSize: '$sm', fontWeight: '600' }}>Nombre de la lista</Text>
+            <Input sx={{ mb: '$4', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl' }}>
               <InputField
                 value={newName}
                 onChangeText={setNewName}
-                placeholder="Nueva lista"
-                sx={{ color: '$white', fontSize: '$xl', fontWeight: 'bold', textAlign: 'left' }}
+                placeholder="Mi lista de tareas"
+                sx={{ color: theme.text, fontSize: '$md' }}
               />
             </Input>
 
-            <Text sx={{ mb: '$1', color: '$white' }}>Etiquetas (separadas por coma)</Text>
-            <Input sx={{ mb: '$3', borderWidth: 1, borderColor: '$white' }}>
+            <Text sx={{ mb: '$2', color: theme.text, fontSize: '$sm', fontWeight: '600' }}>Etiquetas (separadas por coma)</Text>
+            <Input sx={{ mb: '$4', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl' }}>
               <InputField
                 value={newTags}
                 onChangeText={setNewTags}
-                placeholder="Tag1, tag2, ..."
-                sx={{ color: '$white' }}
+                placeholder="trabajo, personal, urgente..."
+                sx={{ color: theme.text }}
               />
             </Input>
 
-            <Text sx={{ mb: '$1', color: '$white' }}>Elementos iniciales</Text>
+            <Text sx={{ mb: '$2', color: theme.text, fontSize: '$sm', fontWeight: '600' }}>Elementos iniciales</Text>
             {newItems.map((val, idx) => (
-              <Input key={idx} sx={{ mb: '$3', borderWidth: 1, borderColor: '$white' }}>
+              <Input key={idx} sx={{ mb: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl' }}>
                 <InputField
                   ref={(input: any) => { itemRefs.current[idx] = input?.getNativeRef(); }}
                   value={val}
                   onChangeText={text => { const arr = [...newItems]; arr[idx] = text; setNewItems(arr); }}
                   placeholder={`Elemento ${idx + 1}`}
-                  sx={{ color: '$white' }}
+                  sx={{ color: theme.text }}
                 />
               </Input>
             ))}
-            <Pressable onPress={addItemField} sx={{ mb: '$4' }}>
-              <Text sx={{ color: '$blue500', fontSize: '$md' }}>Añadir elemento +</Text>
+            <Pressable onPress={addItemField} sx={{ mb: '$4', flexDirection: 'row', alignItems: 'center', gap: '$2' }}>
+              <Icon as={MaterialIcons} name="add-circle" size="sm" color="$blue500" />
+              <Text sx={{ color: '$blue500', fontSize: '$md', fontWeight: '600' }}>Añadir elemento</Text>
             </Pressable>
 
-            <HStack justifyContent="flex-end" sx={{ gap: '$3' }}>
-              <Button variant="outline" onPress={closeModal} sx={{ borderColor: '$white', borderWidth: 1 }}>
-                <Text sx={{ color: '$white' }}>Cancelar</Text>
-              </Button>
-              <Button onPress={createList} disabled={!newName.trim()}>
-                <Text sx={{ color: '$white' }}>Crear</Text>
-              </Button>
+            <HStack justifyContent="flex-end" sx={{ gap: '$3', mt: '$2' }}>
+              <Pressable
+                onPress={closeModal}
+                sx={{
+                  px: '$5',
+                  py: '$3',
+                  borderRadius: '$xl',
+                  borderWidth: 1,
+                  borderColor: theme.border
+                }}
+              >
+                <Text sx={{ color: theme.text, fontWeight: '600' }}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                onPress={createList}
+                disabled={!newName.trim()}
+                sx={{
+                  px: '$5',
+                  py: '$3',
+                  borderRadius: '$xl',
+                  bg: newName.trim() ? '$blue600' : '$gray500',
+                  opacity: newName.trim() ? 1 : 0.5
+                }}
+              >
+                <Text sx={{ color: '$white', fontWeight: '600' }}>Crear Lista</Text>
+              </Pressable>
             </HStack>
           </Box>
         </Box>
@@ -504,22 +607,23 @@ export default function ListsScreen() {
       {/* Modal de crear desde etiquetas */}
       <Modal visible={showTagModal} transparent animationType="slide">
         <Box sx={{ flex: 1, justifyContent: 'center', alignItems: 'center', bg: 'rgba(0,0,0,0.8)' }}>
-          <Box sx={{ bg: '$card', p: '$4', borderRadius: '$lg', width: '90%', maxHeight: '80%' }}>
-            <Text sx={{ color: '$white', fontSize: '$xl', fontWeight: 'bold', mb: '$3' }}>
-              Crear lista desde etiquetas
+          <Box sx={{ bg: theme.card, p: '$5', borderRadius: '$2xl', width: '90%', maxHeight: '85%', borderWidth: 1, borderColor: theme.border }}>
+            <Text sx={{ color: theme.text, fontSize: '$2xl', fontWeight: 'bold', mb: '$4' }}>
+              Crear desde Etiquetas
             </Text>
 
-            <Text sx={{ color: '$white', mb: '$2' }}>
-              Selecciona las etiquetas (máximo 5):
+            <Text sx={{ color: theme.text, mb: '$2', fontSize: '$sm' }}>
+              Selecciona hasta 5 etiquetas:
             </Text>
 
             {/* Input de búsqueda */}
-            <Input sx={{ mb: '$3', borderWidth: 1, borderColor: '$white' }}>
+            <Input sx={{ mb: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl' }}>
               <InputField
                 value={tagSearchQuery}
                 onChangeText={setTagSearchQuery}
                 placeholder="Buscar etiquetas..."
-                sx={{ color: '$white' }}
+                placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                sx={{ color: theme.text }}
               />
             </Input>
 
@@ -555,62 +659,63 @@ export default function ListsScreen() {
             </Box>
 
             {selectedTags.length > 0 && (
-              <Box sx={{ mb: '$3' }}>
-                <Text sx={{ color: '$white', mb: '$2' }}>
-                  Seleccionadas ({selectedTags.length}/5):
+              <Box sx={{ mb: '$4', p: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderRadius: '$xl' }}>
+                <Text sx={{ color: theme.text, mb: '$2', fontSize: '$sm', fontWeight: '600' }}>
+                  Seleccionadas ({selectedTags.length}/5)
                 </Text>
-                <HStack sx={{ flexWrap: 'wrap', gap: '$1' }}>
+                <HStack sx={{ flexWrap: 'wrap', gap: '$2' }}>
                   {selectedTags.map((tag) => (
-                    <Box key={tag} sx={{ bg: '$blue600', px: '$2', py: '$1', borderRadius: '$sm' }}>
-                      <Text sx={{ color: '$white', fontSize: '$sm' }}>{tag}</Text>
+                    <Box key={tag} sx={{ bg: '$blue600', px: '$3', py: '$1.5', borderRadius: '$full' }}>
+                      <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '500' }}>{tag}</Text>
                     </Box>
                   ))}
                 </HStack>
               </Box>
             )}
 
-            <Text sx={{ color: '$white', mb: '$1' }}>
-              Nombre de la lista (opcional):
+            <Text sx={{ color: theme.text, mb: '$2', fontSize: '$sm', fontWeight: '600' }}>
+              Nombre de la lista (opcional)
             </Text>
-            <Input sx={{ mb: '$3', borderWidth: 1, borderColor: '$white' }}>
+            <Input sx={{ mb: '$4', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl' }}>
               <InputField
                 value={customListName}
                 onChangeText={setCustomListName}
                 placeholder="Se generará automáticamente si no especificas"
-                sx={{ color: '$white' }}
+                placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                sx={{ color: theme.text }}
               />
             </Input>
 
-            <HStack justifyContent="flex-end" sx={{ gap: '$3' }}>
+            <HStack justifyContent="flex-end" sx={{ gap: '$3', mt: '$2' }}>
               <Pressable
                 onPress={() => {
                   setShowTagModal(false);
                   setSelectedTags([]);
                   setCustomListName('');
                 }}
-                style={{
-                  paddingVertical: 12,
-                  paddingHorizontal: 20,
-                  borderRadius: 8,
+                sx={{
+                  px: '$5',
+                  py: '$3',
+                  borderRadius: '$xl',
                   borderWidth: 1,
-                  borderColor: '#FFFFFF',
+                  borderColor: theme.border
                 }}
               >
-                <Text sx={{ color: '$white' }}>Cancelar</Text>
+                <Text sx={{ color: theme.text, fontWeight: '600' }}>Cancelar</Text>
               </Pressable>
               <Pressable
                 onPress={createListFromTags}
                 disabled={selectedTags.length === 0 || isCreatingFromTags}
-                style={{
-                  paddingVertical: 12,
-                  paddingHorizontal: 20,
-                  borderRadius: 8,
-                  backgroundColor: selectedTags.length === 0 || isCreatingFromTags ? '#4B5563' : '#2563EB',
-                  opacity: selectedTags.length === 0 || isCreatingFromTags ? 0.5 : 1,
+                sx={{
+                  px: '$5',
+                  py: '$3',
+                  borderRadius: '$xl',
+                  bg: (selectedTags.length === 0 || isCreatingFromTags) ? '$gray500' : '$blue600',
+                  opacity: (selectedTags.length === 0 || isCreatingFromTags) ? 0.5 : 1
                 }}
               >
-                <Text sx={{ color: '$white' }}>
-                  {isCreatingFromTags ? 'Creando...' : `Crear (${selectedTags.length} tags)`}
+                <Text sx={{ color: '$white', fontWeight: '600' }}>
+                  {isCreatingFromTags ? 'Creando...' : `Crear Lista (${selectedTags.length})`}
                 </Text>
               </Pressable>
             </HStack>
@@ -618,22 +723,98 @@ export default function ListsScreen() {
         </Box>
       </Modal>
 
+      {/* Overlay para cerrar el menú al tocar fuera */}
+      {showActionMenu && (
+        <Pressable
+          onPress={() => setShowActionMenu(false)}
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 999
+          }}
+        />
+      )}
+
+      {/* Menú de acciones flotante */}
+      {showActionMenu && (
+        <Box
+          sx={{
+            position: 'absolute',
+            bottom: 100,
+            right: 20,
+            bg: theme.card,
+            borderRadius: '$xl',
+            borderWidth: 1,
+            borderColor: theme.border,
+            shadowColor: '$black',
+            shadowOpacity: 0.3,
+            shadowOffset: { width: 0, height: 4 },
+            shadowRadius: 8,
+            elevation: 8,
+            overflow: 'hidden',
+            zIndex: 1000
+          }}
+        >
+          <Pressable
+            onPress={() => {
+              setShowActionMenu(false);
+              openModal();
+            }}
+            sx={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: '$3',
+              px: '$4',
+              py: '$3',
+              borderBottomWidth: 1,
+              borderBottomColor: theme.border
+            }}
+          >
+            <Icon as={MaterialIcons} name="add" size="md" color="$green600" />
+            <Text sx={{ color: theme.text, fontSize: '$md', fontWeight: '600' }}>Nueva Lista</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setShowActionMenu(false);
+              openTagModal();
+            }}
+            sx={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: '$3',
+              px: '$4',
+              py: '$3'
+            }}
+          >
+            <Icon as={MaterialIcons} name="label" size="md" color="$blue600" />
+            <Text sx={{ color: theme.text, fontSize: '$md', fontWeight: '600' }}>Desde Etiquetas</Text>
+          </Pressable>
+        </Box>
+      )}
+
+      {/* Botón flotante principal */}
       <Pressable
-        onPress={openModal}
+        onPress={() => setShowActionMenu(!showActionMenu)}
         sx={{
           position: 'absolute',
-          bottom: '$5',
-          right: '$5',
-          bg: '$blue500',
-          width: '$12',
-          height: '$12',
+          bottom: 20,
+          right: 20,
+          bg: '$blue600',
+          width: 56,
+          height: 56,
           borderRadius: '$full',
           justifyContent: 'center',
           alignItems: 'center',
           shadowColor: '$black',
           shadowOpacity: 0.3,
-          shadowOffset: { width: 0, height: 2 },
-          shadowRadius: 4,
+          shadowOffset: { width: 0, height: 4 },
+          shadowRadius: 8,
+          elevation: 8,
+          zIndex: 1001,
+          transform: [{ rotate: showActionMenu ? '45deg' : '0deg' }]
         }}
       >
         <Icon as={MaterialIcons} name="add" size="xl" color="$white" />

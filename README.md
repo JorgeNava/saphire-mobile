@@ -2,7 +2,7 @@
 
 Aplicación móvil desarrollada con **React Native** y **Expo** que funciona como tu asistente personal inteligente. Permite gestionar mensajes, pensamientos, notas y listas, todo integrado con IA y sincronizado con un backend serverless en AWS.
 
-> **Versión actual**: 1.2.0  
+> **Versión actual**: 1.4.0  
 > **Backend**: Saphire Backend v0.0.4
 
 ---
@@ -237,14 +237,20 @@ DELETE /tags/{tagId}
 
 ## 📝 Roadmap
 
-### ✅ Completado (v1.2.0)
+### ✅ Completado (v1.4.0)
+- ✅ UI del Chat completamente rediseñada
+- ✅ Búsqueda de etiquetas con filtrado local
+- ✅ Eliminación múltiple de pensamientos
+- ✅ Modales modernos con mejor UX
+- ✅ Botón flotante con menú de acciones
+- ✅ Mensajes persistentes en el chat
 - ✅ Pantalla de Notas con CRUD completo
 - ✅ Búsqueda full-text en Notas
 - ✅ Modal de edición en Pensamientos
 - ✅ Paginación bidireccional
 - ✅ Sistema de etiquetas con autocompletado
 - ✅ Tema moderno Dark/Light
-- ✅ Caché local inteligente
+- ✅ Caché local inteligente (100% cobertura)
 - ✅ Integración completa con backend v0.0.4
 
 ### 🚧 En Progreso

@@ -512,6 +512,76 @@ export default function ThoughtsScreen() {
     setSelectedThoughts(newSelection);
   };
 
+  // Eliminar pensamientos seleccionados
+  const deleteSelectedThoughts = async () => {
+    if (selectedThoughts.size === 0) {
+      Alert.alert('Error', 'Selecciona al menos un pensamiento');
+      return;
+    }
+
+    Alert.alert(
+      'Confirmar eliminación',
+      `¿Estás seguro de eliminar ${selectedThoughts.size} ${selectedThoughts.size === 1 ? 'pensamiento' : 'pensamientos'}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              const thoughtIds = Array.from(selectedThoughts);
+              let deletedCount = 0;
+              let failedCount = 0;
+
+              // Eliminar cada pensamiento
+              for (const thoughtId of thoughtIds) {
+                try {
+                  const response = await fetch(`${THOUGHTS_ENDPOINT}/${thoughtId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId })
+                  });
+
+                  if (response.ok) {
+                    deletedCount++;
+                  } else {
+                    failedCount++;
+                    console.error(`Error al eliminar pensamiento ${thoughtId}:`, response.status);
+                  }
+                } catch (err) {
+                  failedCount++;
+                  console.error(`Error al eliminar pensamiento ${thoughtId}:`, err);
+                }
+              }
+
+              // Mostrar resultado
+              if (deletedCount > 0) {
+                Alert.alert(
+                  'Éxito',
+                  `${deletedCount} ${deletedCount === 1 ? 'pensamiento eliminado' : 'pensamientos eliminados'}${failedCount > 0 ? `\n${failedCount} fallaron` : ''}`
+                );
+                
+                // Invalidar caché y recargar
+                await cacheService.set('cache_thoughts', null, 0);
+                setSelectedThoughts(new Set());
+                setSelectionMode(false);
+                fetchMessages(true, true);
+              } else {
+                Alert.alert('Error', 'No se pudo eliminar ningún pensamiento');
+              }
+            } catch (err) {
+              console.error('Error al eliminar pensamientos:', err);
+              Alert.alert('Error', 'Ocurrió un error al eliminar los pensamientos');
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Convertir pensamientos seleccionados a lista
   const openConvertToListModal = () => {
     if (selectedThoughts.size === 0) {
@@ -646,17 +716,44 @@ export default function ThoughtsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Botón flotante de conversión */}
+      {/* Botones flotantes de acción */}
       {selectionMode && selectedThoughts.size > 0 && (
-        <TouchableOpacity
-          onPress={openConvertToListModal}
-          style={styles.floatingConvertButton}
-        >
-          <Ionicons name="list" size={24} color="#fff" />
-          <Text style={styles.floatingButtonText}>
-            Convertir {selectedThoughts.size} a lista
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.floatingActionsContainer}>
+          {/* Botón de eliminar */}
+          <TouchableOpacity
+            onPress={deleteSelectedThoughts}
+            disabled={isDeleting}
+            style={[
+              styles.floatingActionButton,
+              { 
+                backgroundColor: isDeleting ? '#9CA3AF' : '#EF4444',
+                flex: 1
+              }
+            ]}
+          >
+            <Ionicons name="trash" size={22} color="#fff" />
+            <Text style={styles.floatingButtonText}>
+              {isDeleting ? 'Eliminando...' : `Eliminar (${selectedThoughts.size})`}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Botón de convertir a lista */}
+          <TouchableOpacity
+            onPress={openConvertToListModal}
+            style={[
+              styles.floatingActionButton,
+              { 
+                backgroundColor: '#3b82f6',
+                flex: 1
+              }
+            ]}
+          >
+            <Ionicons name="list" size={22} color="#fff" />
+            <Text style={styles.floatingButtonText}>
+              Crear Lista ({selectedThoughts.size})
+            </Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       <View style={styles.filters}>
@@ -717,30 +814,29 @@ export default function ThoughtsScreen() {
               Separa las etiquetas con comas
             </Text>
 
-            {/* Sugerencias EXACTAMENTE igual que Chat */}
+            {/* Sugerencias con FlatList para mejor rendimiento */}
             {showSuggestions && (
               <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' }}>
                 <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginBottom: 8 }}>
-                  Sugerencias:
+                  Sugerencias ({filteredTags.length}):
                 </Text>
-                <ScrollView 
-                  style={{ maxHeight: 120 }}
+                <FlatList
+                  data={filteredTags}
+                  keyExtractor={(tag) => tag.tagId}
+                  renderItem={({ item: tag }) => (
+                    <TouchableOpacity
+                      onPress={() => selectTag(tag.name)}
+                      style={styles.tagChip}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 12 }}>{tag.name}</Text>
+                    </TouchableOpacity>
+                  )}
+                  style={{ maxHeight: 150 }}
                   showsVerticalScrollIndicator={true}
-                  nestedScrollEnabled={true}
-                  keyboardShouldPersistTaps="always"
-                >
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 4 }}>
-                    {filteredTags.map((tag) => (
-                      <TouchableOpacity
-                        key={tag.tagId}
-                        onPress={() => selectTag(tag.name)}
-                        style={styles.tagChip}
-                      >
-                        <Text style={{ color: '#fff', fontSize: 12 }}>{tag.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
+                  keyboardShouldPersistTaps="handled"
+                  numColumns={3}
+                  columnWrapperStyle={{ gap: 8 }}
+                />
               </View>
             )}
           </View>
@@ -1275,27 +1371,32 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
-  floatingConvertButton: {
+  floatingActionsContainer: {
     position: 'absolute',
     bottom: 20,
-    right: 20,
-    backgroundColor: '#3b82f6',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    gap: 12,
+    zIndex: 1000,
+  },
+  floatingActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 14,
-    borderRadius: 30,
-    elevation: 5,
+    borderRadius: 12,
+    elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 1000,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
   },
   floatingButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
   },
 });

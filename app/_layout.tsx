@@ -21,7 +21,17 @@ export default function RootLayout() {
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="tags" options={{ headerShown: false }} />
-          <Stack.Screen name="list/[id]" options={{ headerShown: false }} />
+          <Stack.Screen 
+            name="list/[id]" 
+            options={{ 
+              headerShown: true,
+              headerBackTitle: 'Listas',
+              headerTintColor: colorScheme === 'dark' ? '#FFFFFF' : '#1A1F3A',
+              headerStyle: {
+                backgroundColor: colorScheme === 'dark' ? '#0A0E27' : '#F5F7FA',
+              },
+            }} 
+          />
           <Stack.Screen name="+not-found" />
         </Stack>
         <StatusBar style="auto" />
