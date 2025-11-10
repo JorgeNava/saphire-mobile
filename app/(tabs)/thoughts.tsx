@@ -176,22 +176,30 @@ export default function ThoughtsScreen() {
           const tagNamesArray = tags.split(',').map(t => t.trim()).filter(Boolean);
           const tagIdsArray: string[] = [];
           
-          // Buscar tagIds correspondientes a los nombres ingresados
-          for (const tagName of tagNamesArray) {
-            const matchingTag = availableTags.find(
-              tag => tag.name.toLowerCase() === tagName.toLowerCase()
-            );
-            if (matchingTag) {
-              tagIdsArray.push(matchingTag.tagId);
-            }
-          }
-          
-          if (tagIdsArray.length > 0) {
-            params.append('tagIds', tagIdsArray.join(','));
-            console.log('🏷️ Filtrando por tags:', tagNamesArray.join(', '));
-            console.log('🔑 Tag IDs:', tagIdsArray.join(', '));
+          // Verificar que availableTags esté cargado
+          if (!availableTags || availableTags.length === 0) {
+            console.warn('⚠️ availableTags no está cargado, usando tagNames como fallback');
+            params.append('tagNames', tags.trim());
           } else {
-            console.warn('⚠️ No se encontraron tagIds para los nombres:', tagNamesArray);
+            // Buscar tagIds correspondientes a los nombres ingresados
+            for (const tagName of tagNamesArray) {
+              const matchingTag = availableTags.find(
+                tag => tag.name.toLowerCase() === tagName.toLowerCase()
+              );
+              if (matchingTag) {
+                tagIdsArray.push(matchingTag.tagId);
+              }
+            }
+            
+            if (tagIdsArray.length > 0) {
+              params.append('tagIds', tagIdsArray.join(','));
+              console.log('🏷️ Filtrando por tags:', tagNamesArray.join(', '));
+              console.log('🔑 Tag IDs:', tagIdsArray.join(', '));
+            } else {
+              console.warn('⚠️ No se encontraron tagIds para los nombres:', tagNamesArray);
+              console.warn('⚠️ Usando tagNames como fallback');
+              params.append('tagNames', tags.trim());
+            }
           }
         }
         if (dateFrom) params.append('createdAt', toISOStringWithZ(dateFrom));
@@ -322,13 +330,19 @@ export default function ThoughtsScreen() {
   useEffect(() => {
     const loadTags = async () => {
       try {
-        const res = await fetch(`${API_BASE}/tags?userId=${userId}`);
+        console.log('📦 Cargando etiquetas disponibles...');
+        const res = await fetch(`${API_BASE}/tags?userId=${userId}&limit=1000`);
         if (res.ok) {
-          const tags = await res.json();
-          setAvailableTags(tags);
+          const data = await res.json();
+          // Soportar tanto array directo como objeto paginado
+          const tagsArray = Array.isArray(data) ? data : (data.items || []);
+          console.log('✅ Etiquetas cargadas:', tagsArray.length);
+          setAvailableTags(tagsArray);
+        } else {
+          console.error('❌ Error al cargar etiquetas:', res.status);
         }
       } catch (err) {
-        console.error('Error loading tags:', err);
+        console.error('❌ Error loading tags:', err);
       }
     };
     
