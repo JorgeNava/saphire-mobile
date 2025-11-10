@@ -10,10 +10,13 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Dimensions,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   ListRenderItem,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -37,6 +40,10 @@ export default function ListDetailScreen() {
   const [showItemInput, setShowItemInput] = useState(false);
   const itemInputRef = useRef<TextInput | null>(null);
   const listRef = useRef<FlatList<any>>(null);
+  
+  // Animación para el modal
+  const slideAnim = useRef(new Animated.Value(300)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [tagNames, setTagNames] = useState<string[]>([]);
@@ -87,6 +94,45 @@ export default function ListDetailScreen() {
       }
     })();
   }, [listId]);
+
+  // Manejar animación del modal
+  useEffect(() => {
+    if (showItemInput) {
+      // Animar entrada
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      
+      // Focus con delay para esperar la animación
+      setTimeout(() => {
+        itemInputRef.current?.focus();
+      }, 250);
+    } else {
+      // Animar salida
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 300,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [showItemInput]);
 
   const handleAddItem = async () => {
     if (!newItem.trim()) return;
@@ -239,159 +285,243 @@ export default function ListDetailScreen() {
   );
   };
 
+  const renderHeader = () => (
+    <Box sx={{ px: '$4', pt: '$4' }}>
+      <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$2' }}>
+        <Text sx={{ color: '$white', fontSize: '$md', fontWeight: 'bold' }}>
+          Etiquetas
+        </Text>
+        <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '600' }}>
+          {items.length} {items.length === 1 ? 'elemento' : 'elementos'}
+        </Text>
+      </HStack>
+      <HStack sx={{ mb: '$4', flexWrap: 'wrap', gap: '$2' }}>
+        {tagNames.length > 0 ? (
+          tagNames.map((tagName, idx) => (
+            <HStack
+              key={tagIds[idx] || idx}
+              alignItems="center"
+              sx={{
+                bg: '$gray600',
+                borderRadius: '$full',
+                minWidth: 50,
+                height: '$6',
+                px: '$3',
+                justifyContent: 'center',
+              }}
+            >
+              <Pressable onPress={() => selectTag(idx)}>
+                <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
+              </Pressable>
+              {selectedTag === idx && (
+                <Pressable onPress={() => removeTag(idx)} sx={{ ml: '$1' }}>
+                  <Icon as={MaterialIcons} name="close" size="xs" color="$white" />
+                </Pressable>
+              )}
+            </HStack>
+          ))
+        ) : (
+          <Text sx={{ color: '$gray500', fontSize: '$xs' }}>Sin etiquetas</Text>
+        )}
+        <Pressable onPress={() => setShowTagPicker(!showTagPicker)}>
+          <HStack
+            alignItems="center"
+            justifyContent="center"
+            sx={{
+              width: '$6',
+              height: '$6',
+              borderRadius: '$full',
+              borderWidth: 1,
+              borderColor: '$white',
+              bg: showTagPicker ? '$blue500' : 'transparent',
+            }}
+          >
+            <Icon as={MaterialIcons} name="add" size="xs" color="$white" />
+          </HStack>
+        </Pressable>
+      </HStack>
+
+      {showTagPicker && (() => {
+        const filteredTags = availableTags.filter(t => !tagIds.includes(t.tagId));
+        return (
+          <Box sx={{ mb: '$4', bg: '$gray700', p: '$3', borderRadius: '$md' }}>
+            <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold', mb: '$2' }}>
+              Agregar etiqueta:
+            </Text>
+            <ScrollView 
+              style={{ maxHeight: 150 }}
+              showsVerticalScrollIndicator={true}
+            >
+              <HStack sx={{ flexWrap: 'wrap', gap: '$2' }}>
+                {filteredTags.map(tag => (
+                  <Pressable
+                    key={tag.tagId}
+                    onPress={() => addTagToList(tag)}
+                    sx={{
+                      bg: '$blue500',
+                      px: '$3',
+                      py: '$2',
+                      borderRadius: '$full',
+                      mb: '$1',
+                    }}
+                  >
+                    <Text sx={{ color: '$white', fontSize: '$xs' }}>+ {tag.name}</Text>
+                  </Pressable>
+                ))}
+              </HStack>
+              {filteredTags.length === 0 && (
+                <Text sx={{ color: '$gray400', fontSize: '$xs' }}>
+                  No hay más tags disponibles
+                </Text>
+              )}
+            </ScrollView>
+          </Box>
+        );
+      })()}
+    </Box>
+  );
+
+  const renderFooter = () => null;
+
   return (
     <>
       <Stack.Screen options={{ title: listName || `Lista ${listId}` }} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.select({ ios: 100, android: 0 })}
+      <Box sx={{ flex: 1, bg }}>
+        <FlatList
+          ref={listRef}
+          data={items}
+          keyExtractor={(_, i) => i.toString()}
+          renderItem={renderItem}
+          ListHeaderComponent={renderHeader}
+          ListFooterComponent={renderFooter}
+          contentContainerStyle={{ paddingBottom: 80 }}
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        />
+
+        <Pressable
+          onPress={() => {
+            setShowItemInput(true);
+            setTimeout(() => {
+              itemInputRef.current?.focus();
+            }, 300);
+          }}
+          sx={{
+            position: 'absolute',
+            bottom: 15,
+            right: 15,
+            bg: '$blue500',
+            width: '$12',
+            height: '$12',
+            borderRadius: '$full',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Icon as={MaterialIcons} name="add" size="xl" color="$white" />
+        </Pressable>
+      </Box>
+
+      <Modal
+        visible={showItemInput}
+        transparent
+        animationType="none"
+        onRequestClose={() => {
+          setShowItemInput(false);
+          setNewItem('');
+        }}
       >
-        <Box sx={{ flex: 1, bg, px: '$4', pt: '$4' }}>
-          <HStack justifyContent="space-between" alignItems="center" sx={{ mb: '$2' }}>
-            <Text sx={{ color: '$white', fontSize: '$md', fontWeight: 'bold' }}>
-              Etiquetas
-            </Text>
-            <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '600' }}>
-              {items.length} {items.length === 1 ? 'elemento' : 'elementos'}
-            </Text>
-          </HStack>
-          <HStack sx={{ mb: '$4', flexWrap: 'wrap', gap: '$2' }}>
-            {tagNames.length > 0 ? (
-              tagNames.map((tagName, idx) => (
-                <HStack
-                  key={tagIds[idx] || idx}
-                  alignItems="center"
-                  sx={{
-                    bg: '$gray600',
-                    borderRadius: '$full',
-                    minWidth: 50,
-                    height: '$6',
-                    px: '$3',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Pressable onPress={() => selectTag(idx)}>
-                    <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
-                  </Pressable>
-                  {selectedTag === idx && (
-                    <Pressable onPress={() => removeTag(idx)} sx={{ ml: '$1' }}>
-                      <Icon as={MaterialIcons} name="close" size="xs" color="$white" />
-                    </Pressable>
-                  )}
-                </HStack>
-              ))
-            ) : (
-              <Text sx={{ color: '$gray500', fontSize: '$xs' }}>Sin etiquetas</Text>
-            )}
-            <Pressable onPress={() => setShowTagPicker(!showTagPicker)}>
-              <HStack
-                alignItems="center"
-                justifyContent="center"
-                sx={{
-                  width: '$6',
-                  height: '$6',
-                  borderRadius: '$full',
-                  borderWidth: 1,
-                  borderColor: '$white',
-                  bg: showTagPicker ? '$blue500' : 'transparent',
-                }}
-              >
-                <Icon as={MaterialIcons} name="add" size="xs" color="$white" />
-              </HStack>
-            </Pressable>
-          </HStack>
-
-          {showTagPicker && (() => {
-            const filteredTags = availableTags.filter(t => !tagIds.includes(t.tagId));
-            return (
-              <Box sx={{ mb: '$4', bg: '$gray700', p: '$3', borderRadius: '$md' }}>
-                <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold', mb: '$2' }}>
-                  Agregar etiqueta:
-                </Text>
-                <ScrollView 
-                  style={{ maxHeight: 150 }}
-                  showsVerticalScrollIndicator={true}
-                >
-                  <HStack sx={{ flexWrap: 'wrap', gap: '$2' }}>
-                    {filteredTags.map(tag => (
-                      <Pressable
-                        key={tag.tagId}
-                        onPress={() => addTagToList(tag)}
-                        sx={{
-                          bg: '$blue500',
-                          px: '$3',
-                          py: '$2',
-                          borderRadius: '$full',
-                          mb: '$1',
-                        }}
-                      >
-                        <Text sx={{ color: '$white', fontSize: '$xs' }}>+ {tag.name}</Text>
-                      </Pressable>
-                    ))}
-                  </HStack>
-                  {filteredTags.length === 0 && (
-                    <Text sx={{ color: '$gray400', fontSize: '$xs' }}>
-                      No hay más tags disponibles
-                    </Text>
-                  )}
-                </ScrollView>
-              </Box>
-            );
-          })()}
-
-          <Box style={{ maxHeight: MAX_LIST_HEIGHT, borderRadius: 8, overflow: 'hidden' }}>
-            <FlatList
-              ref={listRef}
-              data={items}
-              keyExtractor={(_, i) => i.toString()}
-              renderItem={renderItem}
-              contentContainerStyle={{ padding: 12 }}
-              showsVerticalScrollIndicator
-              keyboardShouldPersistTaps="always"
-            />
-          </Box>
-
-          {showItemInput && (
-            <Box sx={{ width: '100%', px: '$4', mt: '$3' }}>
-              <TextInput
-                style={styles.newItemInput}
-                ref={itemInputRef}
-                value={newItem}
-                onChangeText={setNewItem}
-                onSubmitEditing={handleAddItem}
-                placeholder="Nuevo elemento"
-                placeholderTextColor="rgba(255,255,255,0.6)"
-              />
-            </Box>
-          )}
-
-          <Pressable
-            onPress={() => {
-              if (!showItemInput) {
-                setShowItemInput(true);
-                setTimeout(() => itemInputRef.current?.focus(), 50);
-              } else {
-                handleAddItem();
-              }
-            }}
-            sx={{
-              position: 'absolute',
-              bottom: 15,
-              right: 15,
-              bg: '$blue500',
-              width: '$12',
-              height: '$12',
-              borderRadius: '$full',
-              justifyContent: 'center',
-              alignItems: 'center',
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <Animated.View
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              opacity: fadeAnim,
             }}
           >
-            <Icon as={MaterialIcons} name="add" size="xl" color="$white" />
-          </Pressable>
-        </Box>
-      </KeyboardAvoidingView>
+            <Pressable
+              style={{ flex: 1 }}
+              onPress={() => {
+                setShowItemInput(false);
+                setNewItem('');
+              }}
+            />
+          </Animated.View>
+          <Animated.View
+            style={{
+              transform: [{ translateY: slideAnim }],
+            }}
+          >
+            <Box 
+              sx={{ 
+                bg,
+                px: '$4',
+                py: '$4',
+                borderTopLeftRadius: '$2xl',
+                borderTopRightRadius: '$2xl',
+                shadowColor: '$black',
+                shadowOpacity: 0.3,
+                shadowOffset: { width: 0, height: -4 },
+                shadowRadius: 8,
+              }}
+            >
+            <Text sx={{ color: '$white', fontSize: '$lg', fontWeight: 'bold', mb: '$3' }}>
+              Agregar elemento
+            </Text>
+            <HStack sx={{ gap: '$2', alignItems: 'center', mb: '$2' }}>
+              <Box flex={1}>
+                <TextInput
+                  style={styles.newItemInput}
+                  ref={itemInputRef}
+                  value={newItem}
+                  onChangeText={setNewItem}
+                  onSubmitEditing={handleAddItem}
+                  placeholder="Escribe el nuevo elemento..."
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  returnKeyType="done"
+                />
+              </Box>
+            </HStack>
+            <HStack sx={{ gap: '$2', mt: '$2' }}>
+              <Pressable
+                onPress={() => {
+                  setShowItemInput(false);
+                  setNewItem('');
+                }}
+                sx={{
+                  flex: 1,
+                  bg: '$gray600',
+                  py: '$3',
+                  borderRadius: '$md',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Text sx={{ color: '$white', fontWeight: '600' }}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleAddItem}
+                sx={{
+                  flex: 1,
+                  bg: '$blue500',
+                  py: '$3',
+                  borderRadius: '$md',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Text sx={{ color: '$white', fontWeight: '600' }}>Agregar</Text>
+              </Pressable>
+            </HStack>
+            </Box>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Modal>
     </>
   );
 }

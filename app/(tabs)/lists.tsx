@@ -22,6 +22,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { cacheService } from '../../services/cacheService';
 
 // Interfaz actualizada para manejar tags del backend
 interface List {
@@ -61,8 +62,46 @@ export default function ListsScreen() {
     }, [])
   );
 
+  // Iniciar sincronización en background de listas
+  useEffect(() => {
+    cacheService.startListsSync(async () => {
+      const res = await fetch(`${API_BASE}/lists?userId=user123`);
+      const data = await res.json();
+      const listsArray = Array.isArray(data) ? data : (data.lists || []);
+      
+      const parsed: List[] = listsArray.map((l: any) => ({
+        listId: l.listId ?? l.id,
+        name: l.name,
+        tagIds: l.tagIds || [],
+        tagNames: l.tagNames || l.tags || [],
+        items: l.items || [],
+        description: l.description,
+        tagSource: l.tagSource,
+        createdAt: l.createdAt,
+        updatedAt: l.updatedAt,
+      }));
+      
+      setLists(parsed); // Actualizar estado con datos frescos
+      return parsed;
+    });
+
+    // Limpiar al desmontar el componente
+    return () => {
+      cacheService.stopBackgroundSync('cache_lists');
+    };
+  }, []);
+
   async function fetchLists() {
     try {
+      // Intentar obtener del caché primero
+      const cachedLists = await cacheService.getLists();
+      if (cachedLists) {
+        setLists(cachedLists);
+        console.log('✅ Listas cargadas desde caché');
+        return;
+      }
+
+      // Si no hay caché, obtener del servidor
       const res = await fetch(`${API_BASE}/lists?userId=user123`);
       
       if (!res.ok) {
@@ -85,7 +124,12 @@ export default function ListsScreen() {
         createdAt: l.createdAt,
         updatedAt: l.updatedAt,
       }));
+      
       setLists(parsed);
+      
+      // Guardar en caché
+      await cacheService.setLists(parsed);
+      console.log('✅ Listas guardadas en caché');
     } catch (err) {
       console.error('❌ Error fetching lists:', err);
       Alert.alert('Error', 'No se pudo cargar las listas');
@@ -134,29 +178,40 @@ export default function ListsScreen() {
   // Render proteg enkel si item existe
   const renderListItem: ListRenderItem<List> = ({ item }) => {
     if (!item || !item.listId) return null;
+    const MAX_TAGS_DISPLAY = 3;
+    const displayTags = item.tagNames?.slice(0, MAX_TAGS_DISPLAY) || [];
+    const remainingCount = (item.tagNames?.length || 0) - MAX_TAGS_DISPLAY;
+    
     return (
       <HStack
         justifyContent="space-between"
         alignItems="center"
         sx={{ mb: '$2', bg: '$gray700', px: '$3', py: '$2', borderRadius: '$md' }}
       >
-        <Pressable onPress={() => router.push(`/list/${item.listId}`)}>
+        <Pressable onPress={() => router.push(`/list/${item.listId}`)} style={{ flex: 1, marginRight: 8 }}>
           <VStack>
             <Text sx={{ color: '$white', fontSize: '$lg' }}>{item.name}</Text>
             <HStack sx={{ flexWrap: 'wrap', gap: '$1', mt: '$1' }}>
-              {item.tagNames && item.tagNames.length > 0 ? (
-                item.tagNames.map((tagName, idx) => (
-                  <Box key={item.tagIds[idx] || tagName} sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}>
-                    <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
-                  </Box>
-                ))
+              {displayTags.length > 0 ? (
+                <>
+                  {displayTags.map((tagName, idx) => (
+                    <Box key={item.tagIds[idx] || tagName} sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}>
+                      <Text sx={{ color: '$white', fontSize: '$xs' }}>{tagName}</Text>
+                    </Box>
+                  ))}
+                  {remainingCount > 0 && (
+                    <Box sx={{ bg: '$gray600', px: '$2', py: '$1', borderRadius: '$sm' }}>
+                      <Text sx={{ color: '$white', fontSize: '$xs' }}>+{remainingCount}</Text>
+                    </Box>
+                  )}
+                </>
               ) : (
                 <Text sx={{ color: '$gray500', fontSize: '$xs' }}>Sin etiquetas</Text>
               )}
             </HStack>
           </VStack>
         </Pressable>
-        <HStack sx={{ gap: '$2', alignItems: 'center' }}>
+        <HStack sx={{ gap: '$2', alignItems: 'center', flexShrink: 0 }}>
           <Pressable onPress={() => router.push(`/list/${item.listId}`)}>
             <Icon as={MaterialIcons} name="chevron-right" size="md" color="$white" />
           </Pressable>
