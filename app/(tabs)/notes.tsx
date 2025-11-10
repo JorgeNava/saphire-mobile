@@ -204,29 +204,41 @@ export default function NotesScreen() {
 
     setIsSaving(true);
     try {
+      const tagNamesArray = modalTags.split(',').map(t => t.trim()).filter(t => t);
+      
+      console.log('🔄 Actualizando nota:', {
+        noteId: editingNote.noteId,
+        title: modalTitle,
+        tagNames: tagNamesArray,
+      });
+
       const response = await fetch(`${NOTES_ENDPOINT}/${editingNote.noteId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId: 'user123',
           title: modalTitle,
           content: modalContent,
-          tagNames: modalTags.split(',').map(t => t.trim()).filter(t => t),
+          tagNames: tagNamesArray,
           tagSource: 'Manual',
         }),
       });
 
       if (response.ok) {
-        console.log('✅ Nota actualizada');
+        const updatedNote = await response.json();
+        console.log('✅ Nota actualizada:', updatedNote);
         // Invalidar caché para forzar recarga
         await cacheService.set('cache_notes', null, 0);
         closeModal();
         fetchNotes(true);
       } else {
-        throw new Error('Error al actualizar nota');
+        const errorData = await response.text();
+        console.error('❌ Error del servidor:', response.status, errorData);
+        throw new Error(`Error al actualizar nota: ${response.status}`);
       }
-    } catch (err) {
-      console.error('❌ Error:', err);
-      Alert.alert('Error', 'No se pudo actualizar la nota');
+    } catch (err: any) {
+      console.error('❌ Error completo:', err);
+      Alert.alert('Error', err.message || 'No se pudo actualizar la nota');
     } finally {
       setIsSaving(false);
     }

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,6 +15,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { cacheService } from '../../services/cacheService';
@@ -63,21 +63,14 @@ export default function TagsScreen() {
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
 
-  // Debounce para búsqueda
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchTerm !== undefined) {
-        fetchTags(true);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm, limit]);
+  // Ref para evitar múltiples cargas
+  const isLoadingRef = useRef(false);
 
   // Cargar tags
   const fetchTags = async (reset = false) => {
-    if (loading) return;
+    if (isLoadingRef.current && !reset) return;
     
+    isLoadingRef.current = true;
     setLoading(true);
     try {
       // Intentar caché solo en primera carga sin búsqueda
@@ -98,32 +91,41 @@ export default function TagsScreen() {
       if (searchTerm) params.append('searchTerm', searchTerm);
       if (!reset && lastKey) params.append('lastKey', lastKey);
 
+      console.log('🔄 Fetching tags:', { reset, lastKey, searchTerm, limit });
+
       const response = await fetch(`${API_BASE}/tags?${params}`);
-      if (!response.ok) throw new Error('Error al cargar tags');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error response:', response.status, errorText);
+        throw new Error(`Error al cargar tags: ${response.status}`);
+      }
 
       const data = await response.json();
+      console.log('✅ Tags recibidos:', Array.isArray(data) ? data.length : data.items?.length);
       
       // Si es un array simple (formato antiguo)
       if (Array.isArray(data)) {
         const newTags = reset ? data : [...tags, ...data];
         setTags(newTags);
         setHasMore(false);
-        // Para array simple, el total es lo que tenemos cargado
         setTotalCount(newTags.length);
       } else {
         // Formato nuevo con paginación
         const newTags = reset ? data.items : [...tags, ...data.items];
         setTags(newTags);
         setLastKey(data.lastKey || null);
-        setHasMore(data.hasMore || false);
-        // Si el backend provee totalCount, usarlo; si no, usar lo cargado
-        setTotalCount(data.totalCount || newTags.length);
+        setHasMore(!!data.lastKey);
+        
+        if (data.totalCount !== undefined) {
+          setTotalCount(data.totalCount);
+        } else {
+          setTotalCount(newTags.length);
+        }
       }
 
-      // Guardar en caché solo primera página sin búsqueda
-      if (reset && !searchTerm) {
-        const tagsToCache = Array.isArray(data) ? data : data.items;
-        await cacheService.set('cache_tags', tagsToCache, 10 * 60 * 1000); // 10 minutos
+      // Guardar en caché solo si es primera carga sin búsqueda
+      if (reset && !searchTerm && Array.isArray(data)) {
+        await cacheService.set('cache_tags', data, 10 * 60 * 1000);
         console.log('✅ Tags guardados en caché');
       }
 
@@ -134,8 +136,25 @@ export default function TagsScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      isLoadingRef.current = false;
     }
   };
+
+  // Debounce para búsqueda
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLastKey(null);
+      fetchTags(true);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Efecto separado para cambio de límite
+  useEffect(() => {
+    setLastKey(null);
+    fetchTags(true);
+  }, [limit]);
 
   // Refresh
   const onRefresh = () => {
@@ -268,8 +287,8 @@ export default function TagsScreen() {
     </Pressable>
   );
 
-  // Render header
-  const renderHeader = () => (
+  // Render header - Memoizado para evitar re-renders
+  const renderHeader = useCallback(() => (
     <View style={styles.header}>
       {/* Search bar */}
       <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -280,6 +299,8 @@ export default function TagsScreen() {
           placeholderTextColor={theme.placeholder}
           value={searchTerm}
           onChangeText={setSearchTerm}
+          autoCorrect={false}
+          autoCapitalize="none"
         />
         {searchTerm ? (
           <Pressable onPress={() => setSearchTerm('')}>
@@ -302,7 +323,7 @@ export default function TagsScreen() {
         </Pressable>
       </View>
     </View>
-  );
+  ), [searchTerm, tags.length, totalCount, limit, theme]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
@@ -312,6 +333,8 @@ export default function TagsScreen() {
         keyExtractor={(item) => item.tagId}
         ListHeaderComponent={renderHeader}
         contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }

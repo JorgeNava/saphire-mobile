@@ -244,8 +244,8 @@ export default function ListsScreen() {
 
     setIsCreatingFromTags(true);
     try {
-      // Generar nombre de lista si no se proporcionó
-      const listName = customListName.trim() || undefined;
+      // Generar nombre de lista: usar el personalizado o el nombre de las etiquetas
+      const listName = customListName.trim() || selectedTags.join(', ');
 
       console.log('📤 Creando lista desde etiquetas:', {
         userId: 'user123',
@@ -376,13 +376,27 @@ export default function ListsScreen() {
                   style: 'destructive',
                   onPress: async () => {
                     try {
-                      await fetch(`${API_BASE}/lists`, {
+                      const response = await fetch(`${API_BASE}/lists`, {
                         method: 'DELETE',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId: 'user123', listId: item.listId }),
                       });
+
+                      if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('❌ Error al eliminar:', response.status, errorText);
+                        throw new Error(`Error ${response.status}`);
+                      }
+
+                      console.log('✅ Lista eliminada:', item.listId);
+                      
+                      // Invalidar caché
+                      await cacheService.set('cache_lists', null, 0);
+                      
+                      // Actualizar UI
                       setLists(prev => prev.filter(l => l.listId !== item.listId));
-                    } catch {
+                    } catch (err) {
+                      console.error('❌ Error completo:', err);
                       Alert.alert('Error', 'No se pudo eliminar la lista');
                     }
                   },
@@ -568,26 +582,37 @@ export default function ListsScreen() {
             </Input>
 
             <HStack justifyContent="flex-end" sx={{ gap: '$3' }}>
-              <Button
-                variant="outline"
+              <Pressable
                 onPress={() => {
                   setShowTagModal(false);
                   setSelectedTags([]);
                   setCustomListName('');
                 }}
-                sx={{ borderColor: '$white', borderWidth: 1 }}
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 20,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: '#FFFFFF',
+                }}
               >
                 <Text sx={{ color: '$white' }}>Cancelar</Text>
-              </Button>
-              <Button
+              </Pressable>
+              <Pressable
                 onPress={createListFromTags}
                 disabled={selectedTags.length === 0 || isCreatingFromTags}
-                sx={{ bg: '$blue600' }}
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 20,
+                  borderRadius: 8,
+                  backgroundColor: selectedTags.length === 0 || isCreatingFromTags ? '#4B5563' : '#2563EB',
+                  opacity: selectedTags.length === 0 || isCreatingFromTags ? 0.5 : 1,
+                }}
               >
                 <Text sx={{ color: '$white' }}>
                   {isCreatingFromTags ? 'Creando...' : `Crear (${selectedTags.length} tags)`}
                 </Text>
-              </Button>
+              </Pressable>
             </HStack>
           </Box>
         </Box>
