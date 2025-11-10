@@ -66,13 +66,6 @@ export default function TagDetailScreen() {
   const [editTags, setEditTags] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Estados para modal de nota
-  const [showNoteModal, setShowNoteModal] = useState(false);
-  const [selectedNote, setSelectedNote] = useState<any>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editNoteContent, setEditNoteContent] = useState('');
-  const [editNoteTags, setEditNoteTags] = useState('');
-
   // Cargar recursos
   const fetchResources = async () => {
     setLoading(true);
@@ -200,84 +193,6 @@ export default function TagDetailScreen() {
     );
   };
 
-  // Guardar nota editada
-  const saveNote = async () => {
-    if (!selectedNote || !editTitle.trim()) {
-      Alert.alert('Error', 'El título es requerido');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const response = await fetch(
-        `${API_BASE}/notes/${selectedNote.noteId}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            title: editTitle.trim(),
-            content: editNoteContent.trim(),
-            tagNames: editNoteTags.split(',').map(t => t.trim()).filter(t => t),
-            tagSource: 'Manual',
-          }),
-        }
-      );
-
-      if (response.ok) {
-        console.log('✅ Nota actualizada');
-        setShowNoteModal(false);
-        fetchResources();
-      } else {
-        throw new Error('Error al actualizar');
-      }
-    } catch (err) {
-      console.error('❌ Error:', err);
-      Alert.alert('Error', 'No se pudo actualizar la nota');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Eliminar nota
-  const deleteNote = async () => {
-    if (!selectedNote) return;
-
-    Alert.alert(
-      'Eliminar Nota',
-      '¿Estás seguro de eliminar esta nota?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const response = await fetch(
-                `${API_BASE}/notes/${selectedNote.noteId}`,
-                {
-                  method: 'DELETE',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ userId }),
-                }
-              );
-
-              if (response.ok) {
-                console.log('✅ Nota eliminada');
-                setShowNoteModal(false);
-                fetchResources();
-              } else {
-                throw new Error('Error al eliminar');
-              }
-            } catch (err) {
-              console.error('❌ Error:', err);
-              Alert.alert('Error', 'No se pudo eliminar la nota');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   // Obtener datos del tab activo
   const getActiveData = () => {
@@ -302,13 +217,7 @@ export default function TagDetailScreen() {
     } else if (activeTab === 'notes') {
       title = item.title || 'Sin título';
       subtitle = new Date(item.createdAt).toLocaleDateString();
-      onPress = () => {
-        setSelectedNote(item);
-        setEditTitle(item.title || '');
-        setEditNoteContent(item.content || '');
-        setEditNoteTags(item.tagNames?.join(', ') || '');
-        setShowNoteModal(true);
-      };
+      onPress = () => router.push(`/note/${item.noteId}` as any);
     }
 
     return (
@@ -519,95 +428,6 @@ export default function TagDetailScreen() {
         </View>
       </Modal>
 
-      {/* Modal de Nota */}
-      <Modal
-        visible={showNoteModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowNoteModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                Editar Nota
-              </Text>
-              <Pressable onPress={() => setShowNoteModal(false)}>
-                <Ionicons name="close" size={24} color={theme.text} />
-              </Pressable>
-            </View>
-
-            <ScrollView style={styles.modalScroll}>
-              <Text style={[styles.label, { color: theme.text }]}>Título:</Text>
-              <TextInput
-                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-                value={editTitle}
-                onChangeText={setEditTitle}
-                placeholder="Título de la nota"
-                placeholderTextColor={theme.placeholder}
-              />
-
-              <Text style={[styles.label, { color: theme.text }]}>Contenido:</Text>
-              <TextInput
-                style={[styles.textArea, { color: theme.text, borderColor: theme.border }]}
-                value={editNoteContent}
-                onChangeText={setEditNoteContent}
-                placeholder="Contenido de la nota..."
-                placeholderTextColor={theme.placeholder}
-                multiline
-                textAlignVertical="top"
-              />
-
-              <Text style={[styles.label, { color: theme.text }]}>Etiquetas (separadas por comas):</Text>
-              <TextInput
-                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-                value={editNoteTags}
-                onChangeText={setEditNoteTags}
-                placeholder="trabajo, personal, importante"
-                placeholderTextColor={theme.placeholder}
-              />
-
-              <Text style={[styles.dateText, { color: theme.placeholder }]}>
-                Creado: {selectedNote?.createdAt ? new Date(selectedNote.createdAt).toLocaleString() : ''}
-              </Text>
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={deleteNote}
-                style={[styles.deleteButton, { backgroundColor: '#EF4444' }]}
-              >
-                <Ionicons name="trash" size={18} color="#FFFFFF" />
-              </Pressable>
-
-              <View style={styles.rightButtons}>
-                <Pressable
-                  onPress={() => setShowNoteModal(false)}
-                  style={[styles.cancelButton, { backgroundColor: theme.card, borderColor: theme.border }]}
-                >
-                  <Text style={[styles.cancelButtonText, { color: theme.text }]}>Cancelar</Text>
-                </Pressable>
-                <Pressable
-                  onPress={saveNote}
-                  disabled={isSaving || !editTitle.trim()}
-                  style={[
-                    styles.saveButton,
-                    { 
-                      backgroundColor: isSaving || !editTitle.trim() ? '#6B7280' : '#3B82F6',
-                      opacity: isSaving || !editTitle.trim() ? 0.6 : 1 
-                    }
-                  ]}
-                >
-                  <Ionicons name="checkmark" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.buttonText}>
-                    {isSaving ? 'Guardando...' : 'Guardar'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

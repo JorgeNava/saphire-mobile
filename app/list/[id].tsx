@@ -70,6 +70,10 @@ export default function ListDetailScreen() {
 
   // Nombre de la lista para el header
   const [listName, setListName] = useState<string>('');
+  
+  // Indica si la lista fue creada desde etiquetas
+  const [createdFromTags, setCreatedFromTags] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -107,6 +111,7 @@ export default function ListDetailScreen() {
         setTagIds(lst.tagIds || []);
         setTagNames(lst.tagNames || lst.tags || []);
         setListName(lst.name || '');
+        setCreatedFromTags(lst.createdFromTags || false);
         setFullListData(lst);
         loadAvailableTags();
       } catch (err) {
@@ -156,21 +161,44 @@ export default function ListDetailScreen() {
   }, [showItemInput]);
 
   const handleAddItem = async () => {
-    if (!newItem.trim()) return;
+    if (!newItem.trim()) {
+      Alert.alert('Error', 'El elemento no puede estar vacío');
+      return;
+    }
+
+    console.log('➕ Adding item to list:', { listId, newItem: newItem.trim() });
+
     try {
       const res = await fetch(`${API_BASE}/lists/items`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: 'user123', listId, newItem: newItem.trim() }),
       });
-      if (!res.ok) throw new Error();
-      const { items: updated } = await res.json();
+
+      console.log('📥 Response status:', res.status);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('❌ Error response:', errorData);
+        throw new Error(errorData.message || errorData.error || 'Error al agregar elemento');
+      }
+
+      const data = await res.json();
+      console.log('✅ Item added successfully:', data);
+      
+      const { items: updated } = data;
       setItems(updated);
       setNewItem('');
       setShowItemInput(false);
-      listRef.current?.scrollToEnd({ animated: true });
-    } catch {
-      Alert.alert('Error', 'No se pudo agregar el elemento');
+      
+      // Scroll al final para ver el nuevo elemento
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    } catch (err) {
+      console.error('❌ Error adding item:', err);
+      const errorMessage = err instanceof Error ? err.message : 'No se pudo agregar el elemento';
+      Alert.alert('Error', errorMessage);
     }
   };
 
@@ -698,9 +726,96 @@ export default function ListDetailScreen() {
 
   const renderFooter = () => null;
 
+  // Función para refrescar lista creada desde etiquetas
+  const refreshListFromTags = async () => {
+    if (!createdFromTags) {
+      Alert.alert('Error', 'Esta lista no fue creada desde etiquetas');
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      console.log('🔄 Refreshing list from tags:', listId);
+      const response = await fetch(`${API_BASE}/lists/${listId}/refresh-from-tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: 'user123' }),
+      });
+
+      console.log('📥 Response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Error response:', errorData);
+        throw new Error(errorData.message || errorData.error || 'Error al refrescar la lista');
+      }
+
+      const result = await response.json();
+      console.log('✅ Refresh result:', result);
+      
+      Alert.alert(
+        'Lista actualizada',
+        `Se agregaron ${result.addedCount || 0} nuevos pensamientos a la lista`
+      );
+
+      // Recargar la lista
+      const url = `${API_BASE}/lists?userId=user123`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const listsArray = Array.isArray(data) ? data : (data.lists || []);
+        const lst = listsArray.find((l: any) => l.listId === listId || l.id === listId);
+        if (lst) {
+          const normalizedItems = (lst.items || []).map((item: any) => 
+            typeof item === 'string' 
+              ? { content: item, completed: false } 
+              : { 
+                  itemId: item.itemId,
+                  content: item.content, 
+                  completed: item.completed || false,
+                  order: item.order
+                }
+          );
+          setItems(normalizedItems);
+          setFullListData(lst);
+        }
+      }
+
+      // Invalidar caché
+      await cacheService.set('cache_lists', null, 0);
+    } catch (err) {
+      console.error('❌ Error refreshing list:', err);
+      const errorMessage = err instanceof Error ? err.message : 'No se pudo refrescar la lista';
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
   return (
     <>
-      <Stack.Screen options={{ title: listName || `Lista ${listId}` }} />
+      <Stack.Screen 
+        options={{ 
+          title: listName || `Lista ${listId}`,
+          headerRight: createdFromTags ? () => (
+            <Pressable
+              onPress={refreshListFromTags}
+              disabled={isRefreshing}
+              sx={{
+                mr: '$2',
+                p: '$2',
+                opacity: isRefreshing ? 0.5 : 1,
+              }}
+            >
+              <Icon
+                as={MaterialIcons}
+                name="refresh"
+                size="md"
+                color={isDark ? '$white' : '$black'}
+              />
+            </Pressable>
+          ) : undefined,
+        }} 
+      />
 
       <Box sx={{ flex: 1, bg: theme.background }}>
         <FlatList

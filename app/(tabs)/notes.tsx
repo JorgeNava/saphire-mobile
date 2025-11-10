@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -39,6 +40,7 @@ interface Note {
 }
 
 export default function NotesScreen() {
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -51,6 +53,7 @@ export default function NotesScreen() {
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
@@ -198,51 +201,6 @@ export default function NotesScreen() {
     }
   };
 
-  // Actualizar nota
-  const updateNote = async () => {
-    if (!editingNote) return;
-
-    setIsSaving(true);
-    try {
-      const tagNamesArray = modalTags.split(',').map(t => t.trim()).filter(t => t);
-      
-      console.log('🔄 Actualizando nota:', {
-        noteId: editingNote.noteId,
-        title: modalTitle,
-        tagNames: tagNamesArray,
-      });
-
-      const response = await fetch(`${NOTES_ENDPOINT}/${editingNote.noteId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: 'user123',
-          title: modalTitle,
-          content: modalContent,
-          tagNames: tagNamesArray,
-          tagSource: 'Manual',
-        }),
-      });
-
-      if (response.ok) {
-        const updatedNote = await response.json();
-        console.log('✅ Nota actualizada:', updatedNote);
-        // Invalidar caché para forzar recarga
-        await cacheService.set('cache_notes', null, 0);
-        closeModal();
-        fetchNotes(true);
-      } else {
-        const errorData = await response.text();
-        console.error('❌ Error del servidor:', response.status, errorData);
-        throw new Error(`Error al actualizar nota: ${response.status}`);
-      }
-    } catch (err: any) {
-      console.error('❌ Error completo:', err);
-      Alert.alert('Error', err.message || 'No se pudo actualizar la nota');
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   // Eliminar nota
   const deleteNote = async (noteId: string) => {
@@ -285,13 +243,9 @@ export default function NotesScreen() {
     setShowModal(true);
   };
 
-  // Abrir modal para editar
-  const openEditModal = (note: Note) => {
-    setEditingNote(note);
-    setModalTitle(note.title);
-    setModalContent(note.content);
-    setModalTags((note.tagNames || []).join(', '));
-    setShowModal(true);
+  // Navegar a página de edición
+  const openEditPage = (note: Note) => {
+    router.push(`/note/${note.noteId}` as any);
   };
 
   // Cerrar modal
@@ -317,6 +271,15 @@ export default function NotesScreen() {
       setLastKey(null);
       fetchNotes(true);
     }
+  };
+
+  // Pull to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setCurrentPage(1);
+    setLastKey(null);
+    await fetchNotes(true);
+    setRefreshing(false);
   };
 
   // Cargar al montar
@@ -355,16 +318,33 @@ export default function NotesScreen() {
       </TouchableOpacity>
 
       {/* Lista de notas */}
-      {loading || isSearching ? (
-        <ActivityIndicator style={{ marginTop: 20 }} />
-      ) : (
-        <FlatList
-          data={notes}
-          keyExtractor={(item) => item.noteId}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          renderItem={({ item }) => (
+      <FlatList
+        data={notes}
+        keyExtractor={(item) => item.noteId}
+        contentContainerStyle={{ paddingBottom: 20, flexGrow: 1 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#3b82f6"
+            colors={['#3b82f6']}
+          />
+        }
+        ListEmptyComponent={
+          loading || isSearching ? (
+            <ActivityIndicator style={{ marginTop: 20 }} />
+          ) : (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 }}>
+              <Ionicons name="document-text-outline" size={64} color={theme.border} />
+              <Text style={{ color: theme.text, marginTop: 16, opacity: 0.6 }}>
+                {searchQuery ? 'No se encontraron notas' : 'No hay notas'}
+              </Text>
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
             <TouchableOpacity
-              onPress={() => openEditModal(item)}
+              onPress={() => openEditPage(item)}
               style={[styles.noteCard, { backgroundColor: theme.card, borderColor: theme.border }]}
             >
               <View style={styles.noteHeader}>
@@ -400,7 +380,6 @@ export default function NotesScreen() {
             </TouchableOpacity>
           )}
         />
-      )}
 
       {/* Paginación */}
       {!searchQuery && (
@@ -436,7 +415,7 @@ export default function NotesScreen() {
           <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>
-                {editingNote ? 'Editar Nota' : 'Nueva Nota'}
+                Nueva Nota
               </Text>
               <TouchableOpacity onPress={closeModal}>
                 <Text style={{ color: theme.text, fontSize: 24 }}>✕</Text>
@@ -486,12 +465,12 @@ export default function NotesScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={editingNote ? updateNote : createNote}
+                onPress={createNote}
                 disabled={isSaving}
                 style={[styles.modalButton, styles.saveButton]}
               >
                 <Text style={styles.saveButtonText}>
-                  {isSaving ? 'Guardando...' : 'Guardar'}
+                  {isSaving ? 'Guardando...' : 'Crear'}
                 </Text>
               </TouchableOpacity>
             </View>

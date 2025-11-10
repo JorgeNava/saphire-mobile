@@ -1,7 +1,7 @@
 import { InputType, Message } from '@/types/message';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { cacheService } from '../../services/cacheService';
 import {
@@ -12,6 +12,7 @@ import {
   LayoutAnimation,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -37,6 +38,7 @@ function toISOStringWithZ(date: Date) {
 export default function ThoughtsScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -49,6 +51,7 @@ export default function ThoughtsScreen() {
   const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
   const [filteredTags, setFilteredTags] = useState<Array<{tagId: string; name: string}>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Estados para paginación
   const [limit, setLimit] = useState('50');
@@ -92,6 +95,9 @@ export default function ThoughtsScreen() {
   const [convertNoteTags, setConvertNoteTags] = useState('');
   const [thoughtToConvert, setThoughtToConvert] = useState<any>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [addToExistingNote, setAddToExistingNote] = useState(false);
+  const [availableNotes, setAvailableNotes] = useState<Array<{noteId: string; title: string}>>([]);
+  const [selectedNoteId, setSelectedNoteId] = useState('');
 
   const theme = {
     background: isDark ? '#0A0E27' : '#F5F7FA',
@@ -302,28 +308,55 @@ export default function ThoughtsScreen() {
     };
   }, []);
 
-  // Filtrar etiquetas basado en el input (igual que en Chat)
+  // Filtrar etiquetas cuando el usuario escribe (con debouncing y búsqueda en backend)
   useEffect(() => {
-    if (!tags.trim()) {
+    // Limpiar timeout anterior
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (!tags) {
       setShowSuggestions(false);
+      setFilteredTags([]);
       return;
     }
 
-    // Obtener el último tag que se está escribiendo
     const tagsList = tags.split(',').map(t => t.trim());
     const lastTag = tagsList[tagsList.length - 1];
 
-    if (!lastTag) {
+    if (!lastTag || lastTag.length < 2) {
       setShowSuggestions(false);
+      setFilteredTags([]);
       return;
     }
 
-    const filtered = availableTags.filter(tag =>
-      tag.name.toLowerCase().includes(lastTag.toLowerCase())
-    );
-    setFilteredTags(filtered);
-    setShowSuggestions(filtered.length > 0);
-  }, [tags, availableTags]);
+    // Debouncing: esperar 300ms antes de buscar
+    const timeout = setTimeout(async () => {
+      try {
+        // Usar searchTerm en el backend para búsqueda optimizada
+        const res = await fetch(`${API_BASE}/tags?userId=${userId}&searchTerm=${encodeURIComponent(lastTag)}&limit=15`);
+        if (res.ok) {
+          const data = await res.json();
+          // El backend puede retornar un array directo o un objeto con items
+          const tagsArray = Array.isArray(data) ? data : (data.items || []);
+          setFilteredTags(tagsArray.slice(0, 15)); // Limitar a 15 sugerencias
+          setShowSuggestions(tagsArray.length > 0);
+        }
+      } catch (err) {
+        console.error('Error searching tags:', err);
+        setShowSuggestions(false);
+      }
+    }, 300);
+
+    searchTimeoutRef.current = timeout;
+
+    // Cleanup
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [tags]);
 
   // Cargar mensajes al montar el componente
   useEffect(() => {
@@ -382,6 +415,16 @@ export default function ThoughtsScreen() {
       // Hacer fetch con el lastKey de la página anterior (pasarlo directamente)
       fetchMessages(true, false, previousLastKey);
     }
+  };
+
+  // Pull to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setCurrentPage(1);
+    setLastKey(null);
+    setPageHistory([null]);
+    await fetchMessages(true, true);
+    setRefreshing(false);
   };
 
   const toggleTags = () => {
@@ -643,49 +686,113 @@ export default function ThoughtsScreen() {
   };
 
   // Convertir pensamiento individual a nota
-  const openConvertToNoteModal = (thought: any) => {
+  const openConvertToNoteModal = async (thought: any) => {
     setThoughtToConvert(thought);
     setConvertNoteTitle('');
     setConvertNoteTags((thought.tagNames || []).join(', '));
+    setAddToExistingNote(false);
+    setSelectedNoteId('');
+    
+    // Cargar notas disponibles
+    try {
+      const response = await fetch(`${API_BASE}/notes?userId=${userId}&limit=50&sortOrder=desc`);
+      if (response.ok) {
+        const data = await response.json();
+        const notesArray = data.items || [];
+        setAvailableNotes(notesArray.map((n: any) => ({
+          noteId: n.noteId,
+          title: n.title
+        })));
+      }
+    } catch (err) {
+      console.error('Error loading notes:', err);
+    }
+    
     setShowConvertToNoteModal(true);
   };
 
   const convertToNote = async () => {
     if (!thoughtToConvert) return;
 
+    // Validar si se está agregando a nota existente
+    if (addToExistingNote && !selectedNoteId) {
+      Alert.alert('Error', 'Selecciona una nota');
+      return;
+    }
+
     setIsConverting(true);
     try {
-      const tags = convertNoteTags.split(',').map(t => t.trim()).filter(t => t);
-      
-      const response = await fetch(`${API_BASE}/notes/from-thought`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
+      if (addToExistingNote) {
+        // Agregar a nota existente
+        console.log('📝 Adding thought to note:', {
+          noteId: selectedNoteId,
           thoughtId: thoughtToConvert.thoughtId,
-          title: convertNoteTitle.trim() || undefined,
-          tags: tags.length > 0 ? tags : undefined,
-        }),
-      });
+          userId
+        });
 
-      if (response.ok) {
-        const note = await response.json();
-        console.log('✅ Nota creada:', note);
-        // Invalidar caché de notas
-        await cacheService.set('cache_notes', null, 0);
-        Alert.alert('Éxito', `Nota "${note.title}" creada exitosamente`);
-        setShowConvertToNoteModal(false);
-        setConvertNoteTitle('');
-        setConvertNoteTags('');
-        setThoughtToConvert(null);
+        const response = await fetch(`${API_BASE}/notes/${selectedNoteId}/add-thought`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            thoughtId: thoughtToConvert.thoughtId,
+          }),
+        });
+
+        console.log('📥 Response status:', response.status);
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Pensamiento agregado a nota:', result);
+          await cacheService.set('cache_notes', null, 0);
+          Alert.alert('Éxito', 'Pensamiento agregado a la nota');
+          setShowConvertToNoteModal(false);
+          setThoughtToConvert(null);
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('❌ Error response:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData
+          });
+          Alert.alert(
+            'Error', 
+            errorData.message || errorData.error || `Error ${response.status}: No se pudo agregar a la nota`
+          );
+        }
       } else {
-        const error = await response.json();
-        console.error('❌ Error:', error);
-        Alert.alert('Error', error.message || 'No se pudo crear la nota');
+        // Crear nota nueva
+        const tags = convertNoteTags.split(',').map(t => t.trim()).filter(t => t);
+        
+        const response = await fetch(`${API_BASE}/notes/from-thought`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            thoughtId: thoughtToConvert.thoughtId,
+            title: convertNoteTitle.trim() || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+          }),
+        });
+
+        if (response.ok) {
+          const note = await response.json();
+          console.log('✅ Nota creada:', note);
+          await cacheService.set('cache_notes', null, 0);
+          Alert.alert('Éxito', `Nota "${note.title}" creada exitosamente`);
+          setShowConvertToNoteModal(false);
+          setConvertNoteTitle('');
+          setConvertNoteTags('');
+          setThoughtToConvert(null);
+        } else {
+          const error = await response.json();
+          console.error('❌ Error:', error);
+          Alert.alert('Error', error.message || 'No se pudo crear la nota');
+        }
       }
     } catch (err) {
       console.error('❌ Error:', err);
-      Alert.alert('Error', 'No se pudo crear la nota');
+      Alert.alert('Error', 'No se pudo procesar la solicitud');
     } finally {
       setIsConverting(false);
     }
@@ -893,6 +1000,14 @@ export default function ThoughtsScreen() {
           data={messages}
           keyExtractor={(item) => (item as any).thoughtId || item.messageId || (item as any).id || String(Math.random())}
           contentContainerStyle={{ paddingBottom: 50 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#3b82f6"
+              colors={['#3b82f6']}
+            />
+          }
           renderItem={({ item }) => {
             // Thoughts tienen estructura diferente a Messages
             const thought = item as any;
@@ -1153,30 +1268,99 @@ export default function ThoughtsScreen() {
                 Pensamiento: "{thoughtToConvert?.content?.substring(0, 50)}..."
               </Text>
 
-              <Text style={[styles.modalLabel, { color: theme.text }]}>
-                Título (opcional):
-              </Text>
-              <TextInput
-                value={convertNoteTitle}
-                onChangeText={setConvertNoteTitle}
-                placeholder="Se generará automáticamente si no especificas"
-                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
-                placeholderTextColor="rgba(255,255,255,0.5)"
-              />
+              {/* Toggle entre crear nueva o agregar a existente */}
+              <View style={{ flexDirection: 'row', marginBottom: 16, gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setAddToExistingNote(false)}
+                  style={{
+                    flex: 1,
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: !addToExistingNote ? '#3b82f6' : theme.card,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                  }}
+                >
+                  <Text style={{ color: !addToExistingNote ? '#fff' : theme.text, textAlign: 'center', fontWeight: '600' }}>
+                    Nueva Nota
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setAddToExistingNote(true)}
+                  style={{
+                    flex: 1,
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: addToExistingNote ? '#3b82f6' : theme.card,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                  }}
+                >
+                  <Text style={{ color: addToExistingNote ? '#fff' : theme.text, textAlign: 'center', fontWeight: '600' }}>
+                    Agregar a Nota
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-              <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>
-                Etiquetas:
-              </Text>
-              <TextInput
-                value={convertNoteTags}
-                onChangeText={setConvertNoteTags}
-                placeholder="trabajo, ideas..."
-                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
-                placeholderTextColor="rgba(255,255,255,0.5)"
-              />
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
-                Separa las etiquetas con comas
-              </Text>
+              {addToExistingNote ? (
+                /* Selector de nota existente */
+                <>
+                  <Text style={[styles.modalLabel, { color: theme.text }]}>
+                    Selecciona una nota:
+                  </Text>
+                  <ScrollView style={{ maxHeight: 200, marginBottom: 16 }}>
+                    {availableNotes.map((note) => (
+                      <TouchableOpacity
+                        key={note.noteId}
+                        onPress={() => setSelectedNoteId(note.noteId)}
+                        style={{
+                          padding: 12,
+                          borderRadius: 8,
+                          marginBottom: 8,
+                          backgroundColor: selectedNoteId === note.noteId ? '#3b82f6' : theme.card,
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                        }}
+                      >
+                        <Text style={{ color: selectedNoteId === note.noteId ? '#fff' : theme.text }}>
+                          {note.title}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>
+                    El pensamiento se agregará como bullet point (•) al final de la nota
+                  </Text>
+                </>
+              ) : (
+                /* Formulario para crear nueva nota */
+                <>
+                  <Text style={[styles.modalLabel, { color: theme.text }]}>
+                    Título (opcional):
+                  </Text>
+                  <TextInput
+                    value={convertNoteTitle}
+                    onChangeText={setConvertNoteTitle}
+                    placeholder="Se generará automáticamente si no especificas"
+                    style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                    placeholderTextColor="rgba(255,255,255,0.5)"
+                  />
+
+                  <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>
+                    Etiquetas:
+                  </Text>
+                  <TextInput
+                    value={convertNoteTags}
+                    onChangeText={setConvertNoteTags}
+                    placeholder="trabajo, ideas..."
+                    style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                    placeholderTextColor="rgba(255,255,255,0.5)"
+                  />
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
+                    Separa las etiquetas con comas
+                  </Text>
+                </>
+              )}
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1193,7 +1377,7 @@ export default function ThoughtsScreen() {
                 style={[styles.modalButton, styles.saveButton]}
               >
                 <Text style={styles.saveButtonText}>
-                  {isConverting ? 'Convirtiendo...' : 'Crear Nota'}
+                  {isConverting ? 'Procesando...' : (addToExistingNote ? 'Agregar' : 'Crear Nota')}
                 </Text>
               </TouchableOpacity>
             </View>

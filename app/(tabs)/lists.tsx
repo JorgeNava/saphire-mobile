@@ -17,6 +17,7 @@ import {
   FlatList,
   ListRenderItem,
   Modal,
+  RefreshControl,
   TextInput as RNTextInput,
   StyleSheet,
   useColorScheme,
@@ -35,6 +36,7 @@ interface List {
   tagSource?: string;
   createdAt?: string;
   updatedAt?: string;
+  createdFromTags?: boolean; // Indica si la lista fue creada usando "Crear desde Etiquetas"
 }
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
@@ -52,6 +54,7 @@ export default function ListsScreen() {
   };
 
   const [lists, setLists] = useState<List[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
   const [newTags, setNewTags] = useState('');
@@ -265,6 +268,7 @@ export default function ListsScreen() {
           tagNames: selectedTags,
           listName,
           includeCompleted: false,
+          // El backend establece createdFromTags automáticamente
         }),
       });
 
@@ -327,6 +331,13 @@ export default function ListsScreen() {
       }
       return [...prev, tagName];
     });
+  };
+
+  // Pull to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchLists();
+    setRefreshing(false);
   };
 
   // Renderizar item de lista con UI mejorada
@@ -527,6 +538,14 @@ export default function ListsScreen() {
         keyExtractor={l => l.listId}
         renderItem={renderListItem}
         contentContainerStyle={{ paddingBottom: 80 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#3b82f6"
+            colors={['#3b82f6']}
+          />
+        }
       />
 
       <Modal visible={modalVisible} transparent animationType="slide">
@@ -606,8 +625,8 @@ export default function ListsScreen() {
 
       {/* Modal de crear desde etiquetas */}
       <Modal visible={showTagModal} transparent animationType="slide">
-        <Box sx={{ flex: 1, justifyContent: 'center', alignItems: 'center', bg: 'rgba(0,0,0,0.8)' }}>
-          <Box sx={{ bg: theme.card, p: '$5', borderRadius: '$2xl', width: '90%', maxHeight: '85%', borderWidth: 1, borderColor: theme.border }}>
+        <Box sx={{ flex: 1, justifyContent: 'flex-end', bg: 'rgba(0,0,0,0.8)' }}>
+          <Box sx={{ bg: theme.card, p: '$5', borderTopLeftRadius: '$3xl', borderTopRightRadius: '$3xl', maxHeight: '90%', borderWidth: 1, borderColor: theme.border }}>
             <Text sx={{ color: theme.text, fontSize: '$2xl', fontWeight: 'bold', mb: '$4' }}>
               Crear desde Etiquetas
             </Text>
@@ -627,7 +646,7 @@ export default function ListsScreen() {
               />
             </Input>
 
-            <Box sx={{ maxHeight: 300, mb: '$3' }}>
+            <Box sx={{ maxHeight: 250, mb: '$3' }}>
               <FlatList
                 data={filteredTagsForModal}
                 keyExtractor={(tag) => tag.tagId}
@@ -659,7 +678,7 @@ export default function ListsScreen() {
             </Box>
 
             {selectedTags.length > 0 && (
-              <Box sx={{ mb: '$4', p: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderRadius: '$xl' }}>
+              <Box sx={{ mb: '$3', p: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderRadius: '$xl' }}>
                 <Text sx={{ color: theme.text, mb: '$2', fontSize: '$sm', fontWeight: '600' }}>
                   Seleccionadas ({selectedTags.length}/5)
                 </Text>
@@ -676,7 +695,7 @@ export default function ListsScreen() {
             <Text sx={{ color: theme.text, mb: '$2', fontSize: '$sm', fontWeight: '600' }}>
               Nombre de la lista (opcional)
             </Text>
-            <Input sx={{ mb: '$4', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl' }}>
+            <Input sx={{ mb: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl' }}>
               <InputField
                 value={customListName}
                 onChangeText={setCustomListName}
@@ -686,7 +705,7 @@ export default function ListsScreen() {
               />
             </Input>
 
-            <HStack justifyContent="flex-end" sx={{ gap: '$3', mt: '$2' }}>
+            <HStack justifyContent="flex-end" sx={{ gap: '$3' }}>
               <Pressable
                 onPress={() => {
                   setShowTagModal(false);
@@ -694,28 +713,28 @@ export default function ListsScreen() {
                   setCustomListName('');
                 }}
                 sx={{
-                  px: '$5',
-                  py: '$3',
+                  px: '$4',
+                  py: '$2.5',
                   borderRadius: '$xl',
                   borderWidth: 1,
                   borderColor: theme.border
                 }}
               >
-                <Text sx={{ color: theme.text, fontWeight: '600' }}>Cancelar</Text>
+                <Text sx={{ color: theme.text, fontWeight: '600', fontSize: '$sm' }}>Cancelar</Text>
               </Pressable>
               <Pressable
                 onPress={createListFromTags}
                 disabled={selectedTags.length === 0 || isCreatingFromTags}
                 sx={{
-                  px: '$5',
-                  py: '$3',
+                  px: '$4',
+                  py: '$2.5',
                   borderRadius: '$xl',
                   bg: (selectedTags.length === 0 || isCreatingFromTags) ? '$gray500' : '$blue600',
                   opacity: (selectedTags.length === 0 || isCreatingFromTags) ? 0.5 : 1
                 }}
               >
-                <Text sx={{ color: '$white', fontWeight: '600' }}>
-                  {isCreatingFromTags ? 'Creando...' : `Crear Lista (${selectedTags.length})`}
+                <Text sx={{ color: '$white', fontWeight: '600', fontSize: '$sm' }}>
+                  {isCreatingFromTags ? 'Creando...' : `Crear (${selectedTags.length})`}
                 </Text>
               </Pressable>
             </HStack>
