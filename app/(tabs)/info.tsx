@@ -18,17 +18,16 @@ export default function HomeScreen() {
     >
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="title">Saphire Mobile</ThemedText>
-        <ThemedText>Versión 1.4.0</ThemedText>
+        <ThemedText>Versión 1.5.1</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">✨ Novedades v1.4.0</ThemedText>
-        <ThemedText>• UI del Chat completamente rediseñada</ThemedText>
-        <ThemedText>• Búsqueda de etiquetas con filtrado local</ThemedText>
-        <ThemedText>• Eliminación múltiple de pensamientos</ThemedText>
-        <ThemedText>• Modales modernos con mejor UX</ThemedText>
-        <ThemedText>• Botón flotante con menú de acciones</ThemedText>
-        <ThemedText>• Mensajes persistentes en el chat</ThemedText>
+        <ThemedText type="subtitle">✨ Novedades v1.5.1</ThemedText>
+        <ThemedText>• Pull-to-refresh siempre carga desde backend</ThemedText>
+        <ThemedText>• Filtrado de pensamientos por etiquetas mejorado</ThemedText>
+        <ThemedText>• Fix de textos que se salen de contenedores</ThemedText>
+        <ThemedText>• Validaciones y logs detallados</ThemedText>
+        <ThemedText>• Mejor manejo de errores</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
@@ -88,12 +87,13 @@ export default function HomeScreen() {
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">🔧 Correcciones</ThemedText>
-        <ThemedText>• Mensajes ahora persisten en el chat</ThemedText>
-        <ThemedText>• Scroll de etiquetas optimizado</ThemedText>
-        <ThemedText>• Búsqueda sin cerrar teclado</ThemedText>
-        <ThemedText>• Mejor manejo de errores</ThemedText>
-        <ThemedText>• Caché sincronizado correctamente</ThemedText>
+        <ThemedText type="subtitle">🔧 Correcciones v1.5.1</ThemedText>
+        <ThemedText>• Pull-to-refresh ahora carga datos frescos del backend</ThemedText>
+        <ThemedText>• Filtrado por etiquetas usa tagIds (sin falsos positivos)</ThemedText>
+        <ThemedText>• Textos largos ya no se salen de contenedores</ThemedText>
+        <ThemedText>• Tags en chat se guardan correctamente</ThemedText>
+        <ThemedText>• Validación de arrays antes de filtrar</ThemedText>
+        <ThemedText>• Logs detallados para debugging</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
