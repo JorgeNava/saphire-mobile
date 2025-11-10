@@ -2,7 +2,7 @@
 
 Aplicación móvil desarrollada con **React Native** y **Expo** que funciona como tu asistente personal inteligente. Permite gestionar mensajes, pensamientos, notas y listas, todo integrado con IA y sincronizado con un backend serverless en AWS.
 
-> **Versión actual**: 1.4.0  
+> **Versión actual**: 1.5.1  
 > **Backend**: Saphire Backend v0.0.4
 
 ---
@@ -108,18 +108,25 @@ Y luego hacer el build con EAS.
 - Contador de total en BD
 - Caché inteligente (no guarda resultados filtrados)
 
-### 📝 Notas (NUEVO)
+### 📝 Notas
 - **CRUD completo**: Crear, editar, eliminar notas
+- **Página dedicada** para editar notas (no modal)
+- **UI limpia** sin apariencia de formulario
+- **Etiquetas editables** como chips interactivos
+- Agregar/eliminar etiquetas directamente
 - **Búsqueda full-text** en tiempo real
-- Paginación con botones Anterior/Siguiente
-- Modal de edición con diseño moderno
-- Soporte para etiquetas
+- Paginación fija en la parte inferior
+- Pull-to-refresh para actualizar
 - Vista de cards con preview del contenido
 
 ### 📋 Listas
 - Gestión de listas con items
+- **Crear listas desde etiquetas**
+- **Botón de refresh** para listas creadas desde tags
 - Agregar/eliminar items dinámicamente
+- Marcar items como completados
 - Sistema de etiquetas
+- Pull-to-refresh para actualizar
 - Vista detallada por lista
 
 ### ℹ️ Info
@@ -237,7 +244,7 @@ DELETE /tags/{tagId}
 
 ## 📝 Roadmap
 
-### ✅ Completado (v1.4.0)
+### ✅ Completado (v1.5.0)
 - ✅ UI del Chat completamente rediseñada
 - ✅ Búsqueda de etiquetas con filtrado local
 - ✅ Eliminación múltiple de pensamientos
@@ -252,6 +259,14 @@ DELETE /tags/{tagId}
 - ✅ Tema moderno Dark/Light
 - ✅ Caché local inteligente (100% cobertura)
 - ✅ Integración completa con backend v0.0.4
+- ✅ Página dedicada para editar notas (v1.5.0)
+- ✅ Etiquetas editables como chips (v1.5.0)
+- ✅ Pull-to-refresh en todas las pantallas (v1.5.0)
+- ✅ Crear listas desde etiquetas (v1.5.0)
+- ✅ Botón de refresh en listas con tags (v1.5.0)
+- ✅ Búsqueda optimizada de tags con debouncing (v1.5.0)
+- ✅ Navegación a nota desde detalle de etiqueta (v1.5.0)
+- ✅ Agregar pensamiento a nota existente (v1.5.0)
 
 ### 🚧 En Progreso
 - [ ] Adjuntar archivos a notas (imágenes, PDFs)

@@ -170,24 +170,30 @@ export default function ChatScreen() {
     try {
       // Intentar obtener del caché primero
       const cachedTags = await cacheService.getTags();
-      if (cachedTags) {
+      if (cachedTags && Array.isArray(cachedTags)) {
         setAvailableTags(cachedTags);
-        console.log('✅ Tags cargados desde caché');
+        console.log('✅ Tags cargados desde caché:', cachedTags.length);
         return;
       }
 
       // Si no hay caché, obtener del servidor
+      console.log('🔍 Cargando tags desde servidor...');
       const res = await fetch(`${API_BASE}/tags?userId=user123`);
       if (res.ok) {
-        const tags = await res.json();
-        setAvailableTags(tags);
+        const data = await res.json();
+        console.log('📥 Respuesta de tags:', data);
+        
+        // El backend puede retornar array directo o {items: []}
+        const tagsArray = Array.isArray(data) ? data : (data.items || []);
+        setAvailableTags(tagsArray);
         
         // Guardar en caché
-        await cacheService.setTags(tags);
-        console.log('✅ Tags guardados en caché');
+        await cacheService.setTags(tagsArray);
+        console.log('✅ Tags guardados en caché:', tagsArray.length);
       }
     } catch (err) {
-      console.error('Error loading tags:', err);
+      console.error('❌ Error loading tags:', err);
+      setAvailableTags([]); // Fallback a array vacío
     }
   };
 
@@ -195,9 +201,11 @@ export default function ChatScreen() {
   useEffect(() => {
     cacheService.startTagsSync(async () => {
       const res = await fetch(`${API_BASE}/tags?userId=user123`);
-      const tags = await res.json();
-      setAvailableTags(tags); // Actualizar estado con datos frescos
-      return tags;
+      const data = await res.json();
+      // El backend puede retornar array directo o {items: []}
+      const tagsArray = Array.isArray(data) ? data : (data.items || []);
+      setAvailableTags(tagsArray); // Actualizar estado con datos frescos
+      return tagsArray;
     });
 
     // Limpiar al desmontar el componente
@@ -219,26 +227,44 @@ export default function ChatScreen() {
     const currentInput = tags.split(',').pop()?.trim().toLowerCase() || '';
     
     if (currentInput.length > 0) {
-      const filtered = availableTags.filter(tag => 
-        tag.name.toLowerCase().includes(currentInput)
-      );
-      setFilteredTags(filtered);
-      const shouldShow = filtered.length > 0;
-      if (shouldShow !== showSuggestions) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      // Validar que availableTags sea un array antes de filtrar
+      if (Array.isArray(availableTags)) {
+        const filtered = availableTags.filter(tag => 
+          tag.name.toLowerCase().includes(currentInput)
+        );
+        setFilteredTags(filtered);
+        const shouldShow = filtered.length > 0;
+        if (shouldShow !== showSuggestions) {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        }
+        setShowSuggestions(shouldShow);
+      } else {
+        setShowSuggestions(false);
+        setFilteredTags([]);
       }
-      setShowSuggestions(shouldShow);
     } else {
       if (showSuggestions) {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       }
       setShowSuggestions(false);
+      setFilteredTags([]);
     }
   }, [tags, showTagsInput, availableTags]);
 
   const handleSend = async () => {
     if (!text.trim()) return;
     const id = Date.now().toString();
+    
+    // Guardar tags antes de limpiar el estado
+    const currentTags = tags.trim();
+    const tagArray = currentTags ? currentTags.split(',').map(t => t.trim()).filter(t => t) : [];
+    
+    console.log('📤 Enviando mensaje:', {
+      content: text,
+      tags: currentTags,
+      tagArray: tagArray
+    });
+    
     setMessages(prev => [
       { id, text, fromMe: true, status: 'sending' },
       ...prev,
@@ -253,11 +279,14 @@ export default function ChatScreen() {
         content: text,
         inputType: 'text',
         sender: 'user123',
-        ...(tags.trim() && {
-          tagNames: tags.split(',').map(t => t.trim()).filter(t => t),
+        ...(tagArray.length > 0 && {
+          tagNames: tagArray,
           tagSource: 'Manual'
         })
       };
+      
+      console.log('📦 Payload completo:', payload);
+      
       const response = await fetch(TEXT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

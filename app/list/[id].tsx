@@ -203,17 +203,32 @@ export default function ListDetailScreen() {
   };
 
   const deleteItem = async (itemToDelete: string) => {
+    console.log('🗑️ Eliminando item:', { listId, item: itemToDelete });
+    
     try {
       const res = await fetch(`${API_BASE}/lists/items`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: 'user123', listId, item: itemToDelete }),
       });
-      if (!res.ok) throw new Error();
-      const { items: updated } = await res.json();
+
+      console.log('📥 Response status:', res.status);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('❌ Error response:', errorData);
+        throw new Error(errorData.message || errorData.error || 'Error al eliminar elemento');
+      }
+
+      const data = await res.json();
+      console.log('✅ Item eliminado:', data);
+      
+      const { items: updated } = data;
       setItems(updated);
-    } catch {
-      Alert.alert('Error', 'No se pudo eliminar el elemento');
+    } catch (err) {
+      console.error('❌ Error deleting item:', err);
+      const errorMessage = err instanceof Error ? err.message : 'No se pudo eliminar el elemento';
+      Alert.alert('Error', errorMessage);
     }
   };
 

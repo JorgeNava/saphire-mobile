@@ -578,18 +578,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
+    marginRight: 12,
   },
   colorDot: {
     width: 16,
     height: 16,
     borderRadius: 8,
+    flexShrink: 0,
   },
   tagName: {
     fontSize: 16,
     fontWeight: '600',
+    flex: 1,
+    flexShrink: 1,
   },
   usageCount: {
     fontSize: 14,
+    flexShrink: 0,
   },
   tagActions: {
     flexDirection: 'row',

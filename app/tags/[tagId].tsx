@@ -463,10 +463,13 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
+    flexShrink: 0,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    flex: 1,
+    flexShrink: 1,
   },
   headerSubtitle: {
     fontSize: 14,
@@ -497,14 +500,17 @@ const styles = StyleSheet.create({
   },
   resourceContent: {
     flex: 1,
+    marginRight: 12,
   },
   resourceTitle: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+    flexShrink: 1,
   },
   resourceSubtitle: {
     fontSize: 14,
+    flexShrink: 1,
   },
   emptyContainer: {
     alignItems: 'center',

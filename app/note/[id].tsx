@@ -248,13 +248,14 @@ export default function NoteDetailScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={true}
         >
           {/* Título editable */}
           <TextInput
@@ -301,7 +302,8 @@ export default function NoteDetailScreen() {
             textAlignVertical="top"
           />
 
-          <View style={{ height: 50 }} />
+          {/* Espacio extra para scroll cuando aparece el teclado */}
+          <View style={{ height: 300 }} />
         </ScrollView>
       </KeyboardAvoidingView>
       </View>
