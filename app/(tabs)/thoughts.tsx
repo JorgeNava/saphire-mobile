@@ -172,9 +172,27 @@ export default function ThoughtsScreen() {
       if (applyFilters) {
         // Thoughts solo soporta: tagIds, tagSource, createdAt
         if (tags.trim()) {
-          // Buscar por nombres de tags (el backend debe soportar esto)
-          params.append('tagNames', tags.trim());
-          console.log('🏷️ Filtrando por tags:', tags.trim());
+          // ✅ Convertir nombres de tags a tagIds para evitar falsos positivos
+          const tagNamesArray = tags.split(',').map(t => t.trim()).filter(Boolean);
+          const tagIdsArray: string[] = [];
+          
+          // Buscar tagIds correspondientes a los nombres ingresados
+          for (const tagName of tagNamesArray) {
+            const matchingTag = availableTags.find(
+              tag => tag.name.toLowerCase() === tagName.toLowerCase()
+            );
+            if (matchingTag) {
+              tagIdsArray.push(matchingTag.tagId);
+            }
+          }
+          
+          if (tagIdsArray.length > 0) {
+            params.append('tagIds', tagIdsArray.join(','));
+            console.log('🏷️ Filtrando por tags:', tagNamesArray.join(', '));
+            console.log('🔑 Tag IDs:', tagIdsArray.join(', '));
+          } else {
+            console.warn('⚠️ No se encontraron tagIds para los nombres:', tagNamesArray);
+          }
         }
         if (dateFrom) params.append('createdAt', toISOStringWithZ(dateFrom));
         // Nota: Thoughts no tiene inputType ni usedAI
@@ -183,8 +201,9 @@ export default function ThoughtsScreen() {
       const url = `${THOUGHTS_ENDPOINT}?${params.toString()}`;
       console.log('🔍 Fetching:', url);
       console.log('📋 Parámetros de filtro:', {
-        tagNames: tags.trim() || 'ninguno',
-        dateFrom: dateFrom || 'ninguno'
+        tags: tags.trim() || 'ninguno',
+        dateFrom: dateFrom || 'ninguno',
+        usingTagIds: url.includes('tagIds=')
       });
       const res = await fetch(url);
 

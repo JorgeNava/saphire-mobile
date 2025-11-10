@@ -25,6 +25,22 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 - **Lista (Agregar Item)**: Logs detallados con manejo de errores mejorado
 - **Lista (Eliminar Item)**: Logs detallados con manejo de errores mejorado
 
+#### Filtrado de Pensamientos - Fix Crítico
+- **Filtrado por Etiquetas**: Ahora usa `tagIds` en lugar de `tagNames` para evitar falsos positivos
+  - Antes: Buscar "Peliculas" incluía "Peliculas Por Ver", "Mis Peliculas Favoritas" (substring match)
+  - Ahora: Buscar "Peliculas" solo incluye pensamientos con etiqueta exacta "Peliculas" (exact match)
+  - Búsqueda case-insensitive: "PELICULAS", "Peliculas", "peliculas" funcionan igual
+  - Logs detallados: Muestra nombres de tags y sus IDs correspondientes
+  - Mejor performance: Filtrado por UUID es más rápido que substring search
+
+#### Pull-to-Refresh - Siempre Carga desde Backend
+- **Pensamientos**: Pull-to-refresh ahora siempre carga desde backend (no caché)
+- **Notas**: Pull-to-refresh ahora siempre carga desde backend (no caché)
+- **Listas**: Pull-to-refresh ahora siempre carga desde backend (no caché)
+- **Etiquetas**: Pull-to-refresh ahora siempre carga desde backend (no caché)
+- Agregado parámetro `forceRefresh` en todas las funciones fetch
+- Logs visibles: `🔄 Pull-to-refresh: Cargando desde backend...`
+
 ### 🎨 Mejorado
 
 #### Estilos y Layout
