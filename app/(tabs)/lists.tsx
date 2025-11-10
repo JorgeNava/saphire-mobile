@@ -57,6 +57,15 @@ export default function ListsScreen() {
   const [newTags, setNewTags] = useState('');
   const [newItems, setNewItems] = useState<string[]>(['']);
 
+  // Estados para crear lista desde etiquetas
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [customListName, setCustomListName] = useState('');
+  const [isCreatingFromTags, setIsCreatingFromTags] = useState(false);
+  const [tagSearchQuery, setTagSearchQuery] = useState('');
+  const [filteredTagsForModal, setFilteredTagsForModal] = useState<Array<{tagId: string; name: string}>>([]);
+
   const itemRefs = useRef<(RNTextInput | null)[]>([]);
 
   useEffect(() => {
@@ -188,6 +197,136 @@ export default function ListsScreen() {
     });
   };
 
+  // Cargar etiquetas disponibles
+  const fetchAvailableTags = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/tags?userId=user123&limit=100`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const tagsArray = data.items || data.tags || [];
+      setAvailableTags(tagsArray);
+    } catch (err) {
+      console.error('❌ Error fetching tags:', err);
+      Alert.alert('Error', 'No se pudieron cargar las etiquetas');
+    }
+  };
+
+  // Filtrar etiquetas cuando cambia el query de búsqueda
+  useEffect(() => {
+    if (tagSearchQuery.trim()) {
+      const filtered = availableTags.filter(tag =>
+        tag.name.toLowerCase().includes(tagSearchQuery.toLowerCase())
+      );
+      setFilteredTagsForModal(filtered);
+    } else {
+      setFilteredTagsForModal(availableTags);
+    }
+  }, [tagSearchQuery, availableTags]);
+
+  // Abrir modal de crear desde etiquetas
+  const openTagModal = () => {
+    fetchAvailableTags();
+    setTagSearchQuery('');
+    setShowTagModal(true);
+  };
+
+  // Crear lista desde etiquetas seleccionadas
+  const createListFromTags = async () => {
+    if (selectedTags.length === 0) {
+      Alert.alert('Error', 'Selecciona al menos una etiqueta');
+      return;
+    }
+
+    if (selectedTags.length > 5) {
+      Alert.alert('Error', 'Máximo 5 etiquetas permitidas');
+      return;
+    }
+
+    setIsCreatingFromTags(true);
+    try {
+      // Generar nombre de lista si no se proporcionó
+      const listName = customListName.trim() || undefined;
+
+      console.log('📤 Creando lista desde etiquetas:', {
+        userId: 'user123',
+        tagNames: selectedTags,
+        listName,
+        includeCompleted: false,
+      });
+
+      // Usar endpoint especializado del backend
+      const createRes = await fetch(`${API_BASE}/lists/from-tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: 'user123',
+          tagNames: selectedTags,
+          listName,
+          includeCompleted: false,
+        }),
+      });
+
+      console.log('📥 Response status:', createRes.status);
+
+      if (!createRes.ok) {
+        const error = await createRes.json();
+        console.log('❌ Error response:', error);
+        
+        if (error.error === 'NO_THOUGHTS_FOUND') {
+          Alert.alert(
+            'Sin resultados',
+            `No se encontraron pensamientos con las etiquetas seleccionadas: ${selectedTags.join(', ')}\n\nAsegúrate de que existan pensamientos con estas etiquetas.`
+          );
+          setIsCreatingFromTags(false);
+          return;
+        }
+        throw new Error(error.message || 'Error al crear lista');
+      }
+
+      const list = await createRes.json();
+      console.log('✅ Lista creada desde etiquetas:', list);
+      // Invalidar caché de listas
+      await cacheService.set('cache_lists', null, 0);
+      Alert.alert('Éxito', `Lista "${list.name}" creada con ${list.thoughtsFound} pensamientos`);
+
+      // Limpiar y cerrar
+      setShowTagModal(false);
+      setSelectedTags([]);
+      setCustomListName('');
+      await fetchLists();
+    } catch (err: any) {
+      console.error('❌ Error completo:', err);
+      Alert.alert('Error', err.message || 'No se pudo crear la lista desde etiquetas');
+    } finally {
+      setIsCreatingFromTags(false);
+    }
+  };
+
+  // Generar nombre de lista automáticamente
+  const generateListName = (tags: string[]): string => {
+    if (tags.length === 1) {
+      return `Lista: ${tags[0]}`;
+    }
+    if (tags.length === 2) {
+      return `${tags[0]} y ${tags[1]}`;
+    }
+    return `${tags[0]}, ${tags[1]} y más`;
+  };
+
+  // Toggle selección de etiqueta
+  const toggleTagSelection = (tagName: string) => {
+    setSelectedTags(prev => {
+      if (prev.includes(tagName)) {
+        return prev.filter(t => t !== tagName);
+      }
+      if (prev.length >= 5) {
+        Alert.alert('Límite alcanzado', 'Máximo 5 etiquetas permitidas');
+        return prev;
+      }
+      return [...prev, tagName];
+    });
+  };
+
   // Render proteg enkel si item existe
   const renderListItem: ListRenderItem<List> = ({ item }) => {
     if (!item || !item.listId) return null;
@@ -269,6 +408,28 @@ export default function ListsScreen() {
         </Text>
       </HStack>
 
+      {/* Botones de acción */}
+      <HStack sx={{ gap: '$2', mb: '$3' }}>
+        <Button
+          onPress={openTagModal}
+          sx={{ flex: 1, bg: '$blue600', borderRadius: '$md' }}
+        >
+          <HStack sx={{ gap: '$2', alignItems: 'center' }}>
+            <Icon as={MaterialIcons} name="label" size="md" color="$white" />
+            <Text sx={{ color: '$white', fontWeight: '600' }}>Desde Etiquetas</Text>
+          </HStack>
+        </Button>
+        <Button
+          onPress={openModal}
+          sx={{ flex: 1, bg: '$green600', borderRadius: '$md' }}
+        >
+          <HStack sx={{ gap: '$2', alignItems: 'center' }}>
+            <Icon as={MaterialIcons} name="add" size="md" color="$white" />
+            <Text sx={{ color: '$white', fontWeight: '600' }}>Nueva Lista</Text>
+          </HStack>
+        </Button>
+      </HStack>
+
       <FlatList
         data={lists}
         keyExtractor={l => l.listId}
@@ -320,6 +481,112 @@ export default function ListsScreen() {
               </Button>
               <Button onPress={createList} disabled={!newName.trim()}>
                 <Text sx={{ color: '$white' }}>Crear</Text>
+              </Button>
+            </HStack>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* Modal de crear desde etiquetas */}
+      <Modal visible={showTagModal} transparent animationType="slide">
+        <Box sx={{ flex: 1, justifyContent: 'center', alignItems: 'center', bg: 'rgba(0,0,0,0.8)' }}>
+          <Box sx={{ bg: '$card', p: '$4', borderRadius: '$lg', width: '90%', maxHeight: '80%' }}>
+            <Text sx={{ color: '$white', fontSize: '$xl', fontWeight: 'bold', mb: '$3' }}>
+              Crear lista desde etiquetas
+            </Text>
+
+            <Text sx={{ color: '$white', mb: '$2' }}>
+              Selecciona las etiquetas (máximo 5):
+            </Text>
+
+            {/* Input de búsqueda */}
+            <Input sx={{ mb: '$3', borderWidth: 1, borderColor: '$white' }}>
+              <InputField
+                value={tagSearchQuery}
+                onChangeText={setTagSearchQuery}
+                placeholder="Buscar etiquetas..."
+                sx={{ color: '$white' }}
+              />
+            </Input>
+
+            <Box sx={{ maxHeight: 300, mb: '$3' }}>
+              <FlatList
+                data={filteredTagsForModal}
+                keyExtractor={(tag) => tag.tagId}
+                renderItem={({ item: tag }) => (
+                  <Pressable
+                    onPress={() => toggleTagSelection(tag.name)}
+                    sx={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      py: '$2',
+                      px: '$3',
+                      mb: '$1',
+                      bg: selectedTags.includes(tag.name) ? '$blue600' : '$gray700',
+                      borderRadius: '$md',
+                    }}
+                  >
+                    <Icon
+                      as={MaterialIcons}
+                      name={selectedTags.includes(tag.name) ? 'check-box' : 'check-box-outline-blank'}
+                      size="md"
+                      color="$white"
+                    />
+                    <Text sx={{ color: '$white', ml: '$2', fontSize: '$md' }}>
+                      {tag.name}
+                    </Text>
+                  </Pressable>
+                )}
+              />
+            </Box>
+
+            {selectedTags.length > 0 && (
+              <Box sx={{ mb: '$3' }}>
+                <Text sx={{ color: '$white', mb: '$2' }}>
+                  Seleccionadas ({selectedTags.length}/5):
+                </Text>
+                <HStack sx={{ flexWrap: 'wrap', gap: '$1' }}>
+                  {selectedTags.map((tag) => (
+                    <Box key={tag} sx={{ bg: '$blue600', px: '$2', py: '$1', borderRadius: '$sm' }}>
+                      <Text sx={{ color: '$white', fontSize: '$sm' }}>{tag}</Text>
+                    </Box>
+                  ))}
+                </HStack>
+              </Box>
+            )}
+
+            <Text sx={{ color: '$white', mb: '$1' }}>
+              Nombre de la lista (opcional):
+            </Text>
+            <Input sx={{ mb: '$3', borderWidth: 1, borderColor: '$white' }}>
+              <InputField
+                value={customListName}
+                onChangeText={setCustomListName}
+                placeholder="Se generará automáticamente si no especificas"
+                sx={{ color: '$white' }}
+              />
+            </Input>
+
+            <HStack justifyContent="flex-end" sx={{ gap: '$3' }}>
+              <Button
+                variant="outline"
+                onPress={() => {
+                  setShowTagModal(false);
+                  setSelectedTags([]);
+                  setCustomListName('');
+                }}
+                sx={{ borderColor: '$white', borderWidth: 1 }}
+              >
+                <Text sx={{ color: '$white' }}>Cancelar</Text>
+              </Button>
+              <Button
+                onPress={createListFromTags}
+                disabled={selectedTags.length === 0 || isCreatingFromTags}
+                sx={{ bg: '$blue600' }}
+              >
+                <Text sx={{ color: '$white' }}>
+                  {isCreatingFromTags ? 'Creando...' : `Crear (${selectedTags.length} tags)`}
+                </Text>
               </Button>
             </HStack>
           </Box>

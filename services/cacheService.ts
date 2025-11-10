@@ -248,6 +248,22 @@ class CacheService {
     // Sincronizar cada 45 segundos (antes de que expire el caché de 1 min)
     this.startBackgroundSync(CACHE_KEYS.MESSAGES, fetchFunction, 45 * 1000);
   }
+
+  /**
+   * Inicia sincronización automática para notas
+   */
+  startNotesSync(fetchFunction: () => Promise<any[]>): void {
+    // Sincronizar cada 4 minutos (antes de que expire el caché de 5 min)
+    this.startBackgroundSync('cache_notes', fetchFunction, 4 * 60 * 1000);
+  }
+
+  /**
+   * Inicia sincronización automática para pensamientos
+   */
+  startThoughtsSync(fetchFunction: () => Promise<any[]>): void {
+    // Sincronizar cada 90 segundos (antes de que expire el caché de 2 min)
+    this.startBackgroundSync('cache_thoughts', fetchFunction, 90 * 1000);
+  }
 }
 
 export const cacheService = new CacheService();

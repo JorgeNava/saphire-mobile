@@ -22,7 +22,8 @@ const MAPPING = {
   'tray.full.fill': 'inbox',
   'message.circle.fill': 'chat',
   'doc.text.fill': 'description',
-  'list.bullet': 'list'
+  'list.bullet': 'list',
+  'tag.fill': 'label'
 } as IconMapping;
 
 /**

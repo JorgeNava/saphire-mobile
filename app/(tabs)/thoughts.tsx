@@ -81,6 +81,18 @@ export default function ThoughtsScreen() {
     show: boolean;
   }>({ field: '', show: false });
 
+  // Estados para selección múltiple y conversión
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedThoughts, setSelectedThoughts] = useState<Set<string>>(new Set());
+  const [showConvertToListModal, setShowConvertToListModal] = useState(false);
+  const [showConvertToNoteModal, setShowConvertToNoteModal] = useState(false);
+  const [convertListName, setConvertListName] = useState('');
+  const [convertListTags, setConvertListTags] = useState('');
+  const [convertNoteTitle, setConvertNoteTitle] = useState('');
+  const [convertNoteTags, setConvertNoteTags] = useState('');
+  const [thoughtToConvert, setThoughtToConvert] = useState<any>(null);
+  const [isConverting, setIsConverting] = useState(false);
+
   const theme = {
     background: isDark ? '#0A0E27' : '#F5F7FA',
     card: isDark ? '#1A1F3A' : '#FFFFFF',
@@ -274,6 +286,21 @@ export default function ThoughtsScreen() {
     // No se vuelve a calcular con filtros
     fetchTotalThoughts();
   }, []); // Array vacío = solo se ejecuta una vez
+
+  // Background sync para pensamientos
+  useEffect(() => {
+    cacheService.startThoughtsSync(async () => {
+      const res = await fetch(`${THOUGHTS_ENDPOINT}?userId=${userId}&limit=50&sortOrder=desc`);
+      const data = await res.json();
+      const thoughtsArray = data.items || [];
+      setMessages(thoughtsArray); // Actualizar estado con datos frescos
+      return thoughtsArray;
+    });
+
+    return () => {
+      cacheService.stopBackgroundSync('cache_thoughts');
+    };
+  }, []);
 
   // Filtrar etiquetas basado en el input (igual que en Chat)
   useEffect(() => {
@@ -469,6 +496,131 @@ export default function ThoughtsScreen() {
     );
   };
 
+  // Funciones de selección múltiple
+  const toggleSelectionMode = () => {
+    setSelectionMode(!selectionMode);
+    setSelectedThoughts(new Set());
+  };
+
+  const toggleThoughtSelection = (thoughtId: string) => {
+    const newSelection = new Set(selectedThoughts);
+    if (newSelection.has(thoughtId)) {
+      newSelection.delete(thoughtId);
+    } else {
+      newSelection.add(thoughtId);
+    }
+    setSelectedThoughts(newSelection);
+  };
+
+  // Convertir pensamientos seleccionados a lista
+  const openConvertToListModal = () => {
+    if (selectedThoughts.size === 0) {
+      Alert.alert('Error', 'Selecciona al menos un pensamiento');
+      return;
+    }
+    if (selectedThoughts.size > 50) {
+      Alert.alert('Error', 'Máximo 50 pensamientos permitidos');
+      return;
+    }
+    setShowConvertToListModal(true);
+  };
+
+  const convertToList = async () => {
+    if (!convertListName.trim()) {
+      Alert.alert('Error', 'Ingresa un nombre para la lista');
+      return;
+    }
+
+    setIsConverting(true);
+    try {
+      const thoughtIds = Array.from(selectedThoughts);
+      const tags = convertListTags.split(',').map(t => t.trim()).filter(t => t);
+
+      // Usar endpoint especializado del backend
+      const response = await fetch(`${API_BASE}/lists/from-thoughts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          thoughtIds,
+          listName: convertListName,
+          tags,
+        }),
+      });
+
+      if (response.ok) {
+        const list = await response.json();
+        console.log('✅ Lista creada:', list);
+        // Invalidar caché de listas
+        await cacheService.set('cache_lists', null, 0);
+        Alert.alert('Éxito', `Lista "${list.name}" creada con ${thoughtIds.length} pensamientos`);
+        setShowConvertToListModal(false);
+        setConvertListName('');
+        setConvertListTags('');
+        setSelectedThoughts(new Set());
+        setSelectionMode(false);
+      } else {
+        const error = await response.json();
+        console.error('❌ Error:', error);
+        Alert.alert('Error', error.message || 'No se pudo crear la lista');
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      Alert.alert('Error', 'No se pudo crear la lista');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  // Convertir pensamiento individual a nota
+  const openConvertToNoteModal = (thought: any) => {
+    setThoughtToConvert(thought);
+    setConvertNoteTitle('');
+    setConvertNoteTags((thought.tagNames || []).join(', '));
+    setShowConvertToNoteModal(true);
+  };
+
+  const convertToNote = async () => {
+    if (!thoughtToConvert) return;
+
+    setIsConverting(true);
+    try {
+      const tags = convertNoteTags.split(',').map(t => t.trim()).filter(t => t);
+      
+      const response = await fetch(`${API_BASE}/notes/from-thought`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          thoughtId: thoughtToConvert.thoughtId,
+          title: convertNoteTitle.trim() || undefined,
+          tags: tags.length > 0 ? tags : undefined,
+        }),
+      });
+
+      if (response.ok) {
+        const note = await response.json();
+        console.log('✅ Nota creada:', note);
+        // Invalidar caché de notas
+        await cacheService.set('cache_notes', null, 0);
+        Alert.alert('Éxito', `Nota "${note.title}" creada exitosamente`);
+        setShowConvertToNoteModal(false);
+        setConvertNoteTitle('');
+        setConvertNoteTags('');
+        setThoughtToConvert(null);
+      } else {
+        const error = await response.json();
+        console.error('❌ Error:', error);
+        Alert.alert('Error', error.message || 'No se pudo crear la nota');
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      Alert.alert('Error', 'No se pudo crear la nota');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
   const getPickerValue = (): Date => {
     switch (pickerVisible.field) {
       case 'dateFrom': return dateFrom ?? new Date();
@@ -481,7 +633,31 @@ export default function ThoughtsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <Text style={[styles.title, { color: theme.text }]}>Pensamientos</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Text style={[styles.title, { color: theme.text, marginBottom: 0 }]}>Pensamientos</Text>
+        <TouchableOpacity
+          onPress={toggleSelectionMode}
+          style={[styles.selectionButton, { backgroundColor: selectionMode ? '#3b82f6' : theme.card, borderColor: theme.border }]}
+        >
+          <Ionicons name={selectionMode ? "checkmark-circle" : "checkmark-circle-outline"} size={20} color={selectionMode ? '#fff' : theme.text} />
+          <Text style={{ color: selectionMode ? '#fff' : theme.text, fontSize: 14, fontWeight: '600', marginLeft: 6 }}>
+            {selectionMode ? 'Cancelar' : 'Seleccionar'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Botón flotante de conversión */}
+      {selectionMode && selectedThoughts.size > 0 && (
+        <TouchableOpacity
+          onPress={openConvertToListModal}
+          style={styles.floatingConvertButton}
+        >
+          <Ionicons name="list" size={24} color="#fff" />
+          <Text style={styles.floatingButtonText}>
+            Convertir {selectedThoughts.size} a lista
+          </Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.filters}>
         {/* Header con contadores */}
@@ -628,33 +804,50 @@ export default function ThoughtsScreen() {
             const tags = thought.tagNames || [];
             
             return (
-              <TouchableOpacity 
-                onPress={() => openEditModal(thought)}
-                style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}
-              >
-                <Text style={{ color: theme.text, fontWeight: 'bold', marginBottom: 8 }}>
-                  {content}
-                </Text>
-                
-                {tags.length > 0 && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
-                    {tags.map((tag: string, index: number) => (
-                      <View 
-                        key={index}
-                        style={{ 
-                          backgroundColor: theme.border, 
-                          paddingHorizontal: 8, 
-                          paddingVertical: 4, 
-                          borderRadius: 12,
-                          marginRight: 6,
-                          marginBottom: 4
-                        }}
-                      >
-                        <Text style={{ color: theme.text, fontSize: 12 }}>
-                          {tag}
-                        </Text>
-                      </View>
-                    ))}
+              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                  {/* Checkbox en modo selección */}
+                  {selectionMode && (
+                    <TouchableOpacity
+                      onPress={() => toggleThoughtSelection(thought.thoughtId)}
+                      style={{ marginRight: 12, marginTop: 2 }}
+                    >
+                      <Ionicons
+                        name={selectedThoughts.has(thought.thoughtId) ? "checkbox" : "square-outline"}
+                        size={24}
+                        color={selectedThoughts.has(thought.thoughtId) ? '#3b82f6' : theme.text}
+                      />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Contenido del pensamiento */}
+                  <TouchableOpacity 
+                    onPress={() => !selectionMode && openEditModal(thought)}
+                    style={{ flex: 1 }}
+                  >
+                    <Text style={{ color: theme.text, fontWeight: 'bold', marginBottom: 8 }}>
+                      {content}
+                    </Text>
+                    
+                    {tags.length > 0 && (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
+                        {tags.map((tag: string, index: number) => (
+                          <View 
+                            key={index}
+                            style={{ 
+                              backgroundColor: theme.border, 
+                              paddingHorizontal: 8, 
+                              paddingVertical: 4, 
+                              borderRadius: 12,
+                              marginRight: 6,
+                              marginBottom: 4
+                            }}
+                          >
+                            <Text style={{ color: theme.text, fontSize: 12 }}>
+                              {tag}
+                            </Text>
+                          </View>
+                        ))}
                   </View>
                 )}
                 
@@ -675,7 +868,19 @@ export default function ThoughtsScreen() {
                     })}
                   </Text>
                 )}
-              </TouchableOpacity>
+                  </TouchableOpacity>
+
+                  {/* Botón de convertir a nota (solo cuando no está en modo selección) */}
+                  {!selectionMode && (
+                    <TouchableOpacity
+                      onPress={() => openConvertToNoteModal(thought)}
+                      style={{ marginLeft: 8, padding: 8 }}
+                    >
+                      <Ionicons name="document-text-outline" size={20} color="#3b82f6" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
             );
           }}
         />
@@ -755,6 +960,146 @@ export default function ThoughtsScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de conversión a lista */}
+      <Modal
+        visible={showConvertToListModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowConvertToListModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                Convertir a Lista
+              </Text>
+              <TouchableOpacity onPress={() => setShowConvertToListModal(false)}>
+                <Text style={{ color: theme.text, fontSize: 24 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <Text style={{ color: theme.text, marginBottom: 8 }}>
+                Convertir {selectedThoughts.size} pensamientos en una lista
+              </Text>
+
+              <Text style={[styles.modalLabel, { color: theme.text }]}>Nombre de la lista:</Text>
+              <TextInput
+                value={convertListName}
+                onChangeText={setConvertListName}
+                placeholder="Ej: Tareas pendientes"
+                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                placeholderTextColor="rgba(255,255,255,0.5)"
+              />
+
+              <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>
+                Etiquetas adicionales (opcional):
+              </Text>
+              <TextInput
+                value={convertListTags}
+                onChangeText={setConvertListTags}
+                placeholder="trabajo, importante..."
+                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                placeholderTextColor="rgba(255,255,255,0.5)"
+              />
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
+                Separa las etiquetas con comas
+              </Text>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                onPress={() => setShowConvertToListModal(false)}
+                style={[styles.modalButton, styles.cancelButton, { borderColor: theme.border }]}
+              >
+                <Text style={{ color: theme.text, fontSize: 14 }}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={convertToList}
+                disabled={isConverting}
+                style={[styles.modalButton, styles.saveButton]}
+              >
+                <Text style={styles.saveButtonText}>
+                  {isConverting ? 'Convirtiendo...' : 'Crear Lista'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de conversión a nota */}
+      <Modal
+        visible={showConvertToNoteModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowConvertToNoteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                Convertir a Nota
+              </Text>
+              <TouchableOpacity onPress={() => setShowConvertToNoteModal(false)}>
+                <Text style={{ color: theme.text, fontSize: 24 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <Text style={{ color: theme.text, marginBottom: 16 }}>
+                Pensamiento: "{thoughtToConvert?.content?.substring(0, 50)}..."
+              </Text>
+
+              <Text style={[styles.modalLabel, { color: theme.text }]}>
+                Título (opcional):
+              </Text>
+              <TextInput
+                value={convertNoteTitle}
+                onChangeText={setConvertNoteTitle}
+                placeholder="Se generará automáticamente si no especificas"
+                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                placeholderTextColor="rgba(255,255,255,0.5)"
+              />
+
+              <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>
+                Etiquetas:
+              </Text>
+              <TextInput
+                value={convertNoteTags}
+                onChangeText={setConvertNoteTags}
+                placeholder="trabajo, ideas..."
+                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                placeholderTextColor="rgba(255,255,255,0.5)"
+              />
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
+                Separa las etiquetas con comas
+              </Text>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                onPress={() => setShowConvertToNoteModal(false)}
+                style={[styles.modalButton, styles.cancelButton, { borderColor: theme.border }]}
+              >
+                <Text style={{ color: theme.text, fontSize: 14 }}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={convertToNote}
+                disabled={isConverting}
+                style={[styles.modalButton, styles.saveButton]}
+              >
+                <Text style={styles.saveButtonText}>
+                  {isConverting ? 'Convirtiendo...' : 'Crear Nota'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -920,5 +1265,37 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+  },
+  // Estilos para selección múltiple y conversión
+  selectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  floatingConvertButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: '#3b82f6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 30,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 1000,
+  },
+  floatingButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });

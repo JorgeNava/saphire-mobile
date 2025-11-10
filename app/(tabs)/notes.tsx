@@ -15,6 +15,7 @@ import {
   View,
   useColorScheme,
 } from 'react-native';
+import { cacheService } from '../../services/cacheService';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const NOTES_ENDPOINT = `${API_BASE}/notes`;
@@ -71,6 +72,15 @@ export default function NotesScreen() {
   const fetchNotes = async (resetPagination = false, customLastKey?: string | null) => {
     setLoading(true);
     try {
+      // Intentar obtener del caché primero (solo primera página sin filtros)
+      if (resetPagination && !searchQuery) {
+        const cachedNotes = await cacheService.get('cache_notes');
+        if (cachedNotes && Array.isArray(cachedNotes)) {
+          setNotes(cachedNotes as Note[]);
+          console.log('✅ Notas cargadas desde caché');
+        }
+      }
+
       const params = new URLSearchParams();
       params.append('userId', userId);
       params.append('limit', limit || '20');
@@ -93,6 +103,12 @@ export default function NotesScreen() {
       setNotes(data.items || []);
       setLastKey(data.lastKey || null);
       setHasMore(data.hasMore || false);
+
+      // Guardar en caché solo primera página sin filtros
+      if (resetPagination && !searchQuery) {
+        await cacheService.set('cache_notes', data.items || [], 5 * 60 * 1000); // 5 minutos
+        console.log('✅ Notas guardadas en caché');
+      }
 
       console.log(`✅ Loaded ${data.items?.length || 0} notes`);
     } catch (err) {
@@ -131,6 +147,20 @@ export default function NotesScreen() {
     }
   };
 
+  // Background sync para notas
+  useEffect(() => {
+    cacheService.startNotesSync(async () => {
+      const res = await fetch(`${NOTES_ENDPOINT}?userId=${userId}&limit=20&sortOrder=desc`);
+      const data = await res.json();
+      setNotes(data.items || []); // Actualizar estado con datos frescos
+      return data.items || [];
+    });
+
+    return () => {
+      cacheService.stopBackgroundSync('cache_notes');
+    };
+  }, []);
+
   // Crear nota
   const createNote = async () => {
     if (!modalTitle.trim() || !modalContent.trim()) {
@@ -153,6 +183,8 @@ export default function NotesScreen() {
 
       if (response.ok) {
         console.log('✅ Nota creada');
+        // Invalidar caché para forzar recarga
+        await cacheService.set('cache_notes', null, 0);
         closeModal();
         fetchNotes(true);
       } else {
@@ -185,8 +217,10 @@ export default function NotesScreen() {
 
       if (response.ok) {
         console.log('✅ Nota actualizada');
+        // Invalidar caché para forzar recarga
+        await cacheService.set('cache_notes', null, 0);
         closeModal();
-        fetchNotes(false, lastKey);
+        fetchNotes(true);
       } else {
         throw new Error('Error al actualizar nota');
       }
