@@ -15,7 +15,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0A0E27"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.jonava.saphiremobile"
