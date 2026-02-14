@@ -22,6 +22,7 @@ import {
     useColorScheme
 } from 'react-native';
 import { cacheService } from '../../services/cacheService';
+import { logger } from '../../utils/logger';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const THOUGHTS_ENDPOINT = `${API_BASE}/thoughts`;
@@ -144,7 +145,7 @@ export default function ThoughtsScreen() {
         const cachedThoughts = await cacheService.get('cache_thoughts');
         if (cachedThoughts && Array.isArray(cachedThoughts)) {
           setMessages(cachedThoughts as Message[]);
-          console.log('✅ Thoughts cargados desde caché');
+          logger.log('✅ Thoughts cargados desde caché');
           setLoading(false);
           return;
         }
@@ -161,9 +162,9 @@ export default function ThoughtsScreen() {
       // Agregar lastKey para paginación SOLO si NO estamos reseteando
       if (keyToUse && !resetPagination) {
         params.append('lastKey', keyToUse);
-        console.log('🔑 Usando lastKey:', keyToUse);
+        logger.log('🔑 Usando lastKey:', keyToUse);
       } else {
-        console.log('🔑 Sin lastKey (página 1)');
+        logger.log('🔑 Sin lastKey (página 1)');
       }
 
       if (applyFilters) {
@@ -193,8 +194,8 @@ export default function ThoughtsScreen() {
             
             if (tagIdsArray.length > 0) {
               params.append('tagIds', tagIdsArray.join(','));
-              console.log('🏷️ Filtrando por tags:', tagNamesArray.join(', '));
-              console.log('🔑 Tag IDs:', tagIdsArray.join(', '));
+              logger.log('🏷️ Filtrando por tags:', tagNamesArray.join(', '));
+              logger.log('🔑 Tag IDs:', tagIdsArray.join(', '));
             } else {
               console.warn('⚠️ No se encontraron tagIds para los nombres:', tagNamesArray);
               console.warn('⚠️ Usando tagNames como fallback');
@@ -207,8 +208,8 @@ export default function ThoughtsScreen() {
       }
 
       const url = `${THOUGHTS_ENDPOINT}?${params.toString()}`;
-      console.log('🔍 Fetching:', url);
-      console.log('📋 Parámetros de filtro:', {
+      logger.log('🔍 Fetching:', url);
+      logger.log('📋 Parámetros de filtro:', {
         tags: tags.trim() || 'ninguno',
         dateFrom: dateFrom || 'ninguno',
         usingTagIds: url.includes('tagIds=')
@@ -224,7 +225,7 @@ export default function ThoughtsScreen() {
       }
       
       const data = await res.json();
-      console.log('📦 Respuesta del backend:', {
+      logger.log('📦 Respuesta del backend:', {
         totalItems: data.items?.length || 0,
         hasMore: data.hasMore,
         lastKey: data.lastKey ? 'presente' : 'null',
@@ -236,8 +237,8 @@ export default function ThoughtsScreen() {
         new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
       );
       
-      // Filtrado por contenido del lado del cliente (funciona incluso sin deploy del backend)
-      if (contentSearch.trim()) {
+      // Filtrado por contenido del lado del cliente (solo si applyFilters=true)
+      if (applyFilters && contentSearch.trim()) {
         const searchLower = contentSearch.trim().toLowerCase();
         thoughtsArray = thoughtsArray.filter((t: any) =>
           (t.content || '').toLowerCase().includes(searchLower)
@@ -264,9 +265,9 @@ export default function ThoughtsScreen() {
       // Guardar en caché solo si no hay filtros activos
       if (!checkActiveFilters()) {
         await cacheService.set('cache_thoughts', thoughtsArray, 2 * 60 * 1000); // 2 minutos
-        console.log('✅ Thoughts guardados en caché');
+        logger.log('✅ Thoughts guardados en caché');
       } else {
-        console.log('🔍 Resultados filtrados (no se guardan en caché)');
+        logger.log('🔍 Resultados filtrados (no se guardan en caché)');
       }
     } catch (err) {
       console.error('❌ Error fetching thoughts:', err);
@@ -279,12 +280,12 @@ export default function ThoughtsScreen() {
   const fetchTotalThoughts = async () => {
     // Evitar múltiples ejecuciones simultáneas
     if (isLoadingTotal) {
-      console.log('⏳ Ya se está cargando el total, saltando...');
+      logger.log('⏳ Ya se está cargando el total, saltando...');
       return;
     }
     
     setIsLoadingTotal(true);
-    console.log('🔄 Iniciando cálculo del total de pensamientos...');
+    logger.log('🔄 Iniciando cálculo del total de pensamientos...');
     
     try {
       let total = 0;
@@ -308,7 +309,7 @@ export default function ThoughtsScreen() {
           currentLastKey = countData.lastKey;
           currentHasMore = countData.hasMore || false;
           
-          console.log(`📄 Página ${pageCount}: ${itemsCount} items (Total acumulado: ${total})`);
+          logger.log(`📄 Página ${pageCount}: ${itemsCount} items (Total acumulado: ${total})`);
         } else {
           console.error('❌ Error en página', pageCount);
           break;
@@ -316,7 +317,7 @@ export default function ThoughtsScreen() {
       }
       
       setTotalThoughtsInDB(total);
-      console.log(`✅ Total FINAL de pensamientos en BD: ${total}`);
+      logger.log(`✅ Total FINAL de pensamientos en BD: ${total}`);
     } catch (err) {
       console.error('❌ Error fetching total thoughts:', err);
     } finally {
@@ -328,13 +329,13 @@ export default function ThoughtsScreen() {
   useEffect(() => {
     const loadTags = async () => {
       try {
-        console.log('📦 Cargando etiquetas disponibles...');
+        logger.log('📦 Cargando etiquetas disponibles...');
         const res = await fetch(`${API_BASE}/tags?userId=${userId}&limit=1000`);
         if (res.ok) {
           const data = await res.json();
           // Soportar tanto array directo como objeto paginado
           const tagsArray = Array.isArray(data) ? data : (data.items || []);
-          console.log('✅ Etiquetas cargadas:', tagsArray.length);
+          logger.log('✅ Etiquetas cargadas:', tagsArray.length);
           setAvailableTags(tagsArray);
         } else {
           console.error('❌ Error al cargar etiquetas:', res.status);
@@ -359,7 +360,12 @@ export default function ThoughtsScreen() {
       const thoughtsArray = (data.items || []).sort((a: any, b: any) =>
         new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
       );
-      setMessages(thoughtsArray); // Actualizar estado con datos frescos
+      // Solo actualizar si los datos cambiaron
+      setMessages(prev => {
+        const prevIds = prev.map((m: any) => (m.thoughtId || m.messageId) + (m.updatedAt || '')).join(',');
+        const newIds = thoughtsArray.map((m: any) => (m.thoughtId || m.messageId) + (m.updatedAt || '')).join(',');
+        return prevIds === newIds ? prev : thoughtsArray;
+      });
       return thoughtsArray;
     });
 
@@ -371,18 +377,16 @@ export default function ThoughtsScreen() {
   // Callback cuando TagSelector carga las etiquetas
   const handleTagsLoaded = (loadedTags: Array<{tagId: string; name: string}>) => {
     setAvailableTags(loadedTags);
-    console.log('✅ Tags cargados:', loadedTags.length);
+    logger.log('✅ Tags cargados:', loadedTags.length);
   };
 
-  // Cargar mensajes al montar el componente
-  useEffect(() => {
-    fetchMessages(false);
-  }, []);
-
-  // Recargar mensajes cada vez que el usuario regresa a esta pantalla
+  // Cargar mensajes al montar y cuando el usuario regresa (con cooldown de 30s)
   useFocusEffect(
     useCallback(() => {
-      fetchMessages(false);
+      if (cacheService.shouldFetch('thoughts', 30000)) {
+        fetchMessages(false);
+        cacheService.markFetched('thoughts');
+      }
     }, [])
   );
 
@@ -418,8 +422,8 @@ export default function ThoughtsScreen() {
       // Obtener el lastKey de la página anterior del historial
       const previousLastKey = pageHistory[newPage - 1] || null;
       
-      console.log(`⬅️ Retrocediendo a página ${newPage}, lastKey:`, previousLastKey);
-      console.log('📚 Historial actual:', pageHistory);
+      logger.log(`⬅️ Retrocediendo a página ${newPage}, lastKey:`, previousLastKey);
+      logger.log('📚 Historial actual:', pageHistory);
       
       // Actualizar estados
       setCurrentPage(newPage);
@@ -439,7 +443,7 @@ export default function ThoughtsScreen() {
     setCurrentPage(1);
     setLastKey(null);
     setPageHistory([null]);
-    console.log('🔄 Pull-to-refresh: Cargando desde backend...');
+    logger.log('🔄 Pull-to-refresh: Cargando desde backend...');
     await fetchMessages(true, true, null, true); // forceRefresh = true
     setRefreshing(false);
   };
@@ -474,7 +478,7 @@ export default function ThoughtsScreen() {
       const thoughtId = selectedThought.thoughtId;
       const tagArray = editTags.split(',').map(t => t.trim()).filter(t => t);
       
-      console.log('📤 Actualizando pensamiento:', {
+      logger.log('📤 Actualizando pensamiento:', {
         thoughtId,
         content: editContent,
         tags: tagArray
@@ -492,7 +496,7 @@ export default function ThoughtsScreen() {
       });
 
       if (response.ok) {
-        console.log('✅ Pensamiento actualizado');
+        logger.log('✅ Pensamiento actualizado');
         // Actualizar localmente sin re-fetch para mantener el orden
         const updatedThought = await response.json();
         setMessages(prev => prev.map(m =>
@@ -534,7 +538,7 @@ export default function ThoughtsScreen() {
               });
 
               if (response.ok) {
-                console.log('✅ Pensamiento eliminado');
+                logger.log('✅ Pensamiento eliminado');
                 // Eliminar localmente sin re-fetch para mantener el orden
                 setMessages(prev => prev.filter(m => (m as any).thoughtId !== thoughtId));
                 await cacheService.set('cache_thoughts', null, 0);
@@ -680,7 +684,7 @@ export default function ThoughtsScreen() {
 
       if (response.ok) {
         const list = await response.json();
-        console.log('✅ Lista creada:', list);
+        logger.log('✅ Lista creada:', list);
         // Invalidar caché de listas
         await cacheService.set('cache_lists', null, 0);
         Alert.alert('Éxito', `Lista "${list.name}" creada con ${thoughtIds.length} pensamientos`);
@@ -741,7 +745,7 @@ export default function ThoughtsScreen() {
     try {
       if (addToExistingNote) {
         // Agregar a nota existente
-        console.log('📝 Adding thought to note:', {
+        logger.log('📝 Adding thought to note:', {
           noteId: selectedNoteId,
           thoughtId: thoughtToConvert.thoughtId,
           userId
@@ -756,11 +760,11 @@ export default function ThoughtsScreen() {
           }),
         });
 
-        console.log('📥 Response status:', response.status);
+        logger.log('📥 Response status:', response.status);
 
         if (response.ok) {
           const result = await response.json();
-          console.log('✅ Pensamiento agregado a nota:', result);
+          logger.log('✅ Pensamiento agregado a nota:', result);
           await cacheService.set('cache_notes', null, 0);
           Alert.alert('Éxito', 'Pensamiento agregado a la nota');
           setShowConvertToNoteModal(false);
@@ -794,7 +798,7 @@ export default function ThoughtsScreen() {
 
         if (response.ok) {
           const note = await response.json();
-          console.log('✅ Nota creada:', note);
+          logger.log('✅ Nota creada:', note);
           await cacheService.set('cache_notes', null, 0);
           Alert.alert('Éxito', `Nota "${note.title}" creada exitosamente`);
           setShowConvertToNoteModal(false);
@@ -824,6 +828,94 @@ export default function ThoughtsScreen() {
       default: return new Date();
     }
   };
+
+  const thoughtKeyExtractor = useCallback(
+    (item: Message) => (item as any).thoughtId || item.messageId || (item as any).id || `thought-${(item as any).createdAt}`,
+    []
+  );
+
+  const renderThoughtItem = useCallback(({ item }: { item: Message }) => {
+    const thought = item as any;
+    const content = thought.content || thought.originalContent || 'Sin contenido';
+    const thoughtTags = thought.tagNames || [];
+    
+    return (
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+          {selectionMode && (
+            <TouchableOpacity
+              onPress={() => toggleThoughtSelection(thought.thoughtId)}
+              style={{ marginRight: 12, marginTop: 2 }}
+            >
+              <Ionicons
+                name={selectedThoughts.has(thought.thoughtId) ? "checkbox" : "square-outline"}
+                size={24}
+                color={selectedThoughts.has(thought.thoughtId) ? '#3b82f6' : theme.text}
+              />
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity 
+            onPress={() => !selectionMode && openEditModal(thought)}
+            style={{ flex: 1 }}
+          >
+            <Text style={{ color: theme.text, fontWeight: 'bold', marginBottom: 8 }}>
+              {content}
+            </Text>
+            
+            {thoughtTags.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
+                {thoughtTags.map((tag: string, index: number) => (
+                  <View 
+                    key={index}
+                    style={{ 
+                      backgroundColor: theme.border, 
+                      paddingHorizontal: 8, 
+                      paddingVertical: 4, 
+                      borderRadius: 12,
+                      marginRight: 6,
+                      marginBottom: 4
+                    }}
+                  >
+                    <Text style={{ color: theme.text, fontSize: 12 }}>
+                      {tag}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            
+            {thought.tagSource && (
+              <Text style={{ color: theme.text, fontSize: 12, fontStyle: 'italic', marginBottom: 4 }}>
+                Origen tags: {thought.tagSource}
+              </Text>
+            )}
+            
+            {thought.createdAt && (
+              <Text style={{ color: theme.text, fontSize: 12, opacity: 0.7 }}>
+                {new Date(thought.createdAt).toLocaleString('es-MX', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {!selectionMode && (
+            <TouchableOpacity
+              onPress={() => openConvertToNoteModal(thought)}
+              style={{ marginLeft: 8, padding: 8 }}
+            >
+              <Ionicons name="document-text-outline" size={20} color="#3b82f6" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  }, [theme, selectionMode, selectedThoughts]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -936,10 +1028,12 @@ export default function ThoughtsScreen() {
           {contentSearch.length > 0 && (
             <TouchableOpacity onPress={() => {
               setContentSearch('');
+              setTags('');
+              setDateFrom(null);
               setLastKey(null);
               setCurrentPage(1);
-              // Fetch sin filtros para mostrar todos (contentSearch ya será '' en el próximo render)
-              fetchMessages(false, true);
+              setPageHistory([null]);
+              fetchMessages(false, true, null, true);
             }}>
               <Ionicons name="close-circle" size={18} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} />
             </TouchableOpacity>
@@ -1015,7 +1109,7 @@ export default function ThoughtsScreen() {
       ) : (
         <FlatList
           data={messages}
-          keyExtractor={(item) => (item as any).thoughtId || item.messageId || (item as any).id || String(Math.random())}
+          keyExtractor={thoughtKeyExtractor}
           contentContainerStyle={{ paddingBottom: 50 }}
           refreshControl={
             <RefreshControl
@@ -1025,92 +1119,7 @@ export default function ThoughtsScreen() {
               colors={['#3b82f6']}
             />
           }
-          renderItem={({ item }) => {
-            // Thoughts tienen estructura diferente a Messages
-            const thought = item as any;
-            const content = thought.content || thought.originalContent || 'Sin contenido';
-            const tags = thought.tagNames || [];
-            
-            return (
-              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                  {/* Checkbox en modo selección */}
-                  {selectionMode && (
-                    <TouchableOpacity
-                      onPress={() => toggleThoughtSelection(thought.thoughtId)}
-                      style={{ marginRight: 12, marginTop: 2 }}
-                    >
-                      <Ionicons
-                        name={selectedThoughts.has(thought.thoughtId) ? "checkbox" : "square-outline"}
-                        size={24}
-                        color={selectedThoughts.has(thought.thoughtId) ? '#3b82f6' : theme.text}
-                      />
-                    </TouchableOpacity>
-                  )}
-
-                  {/* Contenido del pensamiento */}
-                  <TouchableOpacity 
-                    onPress={() => !selectionMode && openEditModal(thought)}
-                    style={{ flex: 1 }}
-                  >
-                    <Text style={{ color: theme.text, fontWeight: 'bold', marginBottom: 8 }}>
-                      {content}
-                    </Text>
-                    
-                    {tags.length > 0 && (
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
-                        {tags.map((tag: string, index: number) => (
-                          <View 
-                            key={index}
-                            style={{ 
-                              backgroundColor: theme.border, 
-                              paddingHorizontal: 8, 
-                              paddingVertical: 4, 
-                              borderRadius: 12,
-                              marginRight: 6,
-                              marginBottom: 4
-                            }}
-                          >
-                            <Text style={{ color: theme.text, fontSize: 12 }}>
-                              {tag}
-                            </Text>
-                          </View>
-                        ))}
-                  </View>
-                )}
-                
-                {thought.tagSource && (
-                  <Text style={{ color: theme.text, fontSize: 12, fontStyle: 'italic', marginBottom: 4 }}>
-                    Origen tags: {thought.tagSource}
-                  </Text>
-                )}
-                
-                {thought.createdAt && (
-                  <Text style={{ color: theme.text, fontSize: 12, opacity: 0.7 }}>
-                    {new Date(thought.createdAt).toLocaleString('es-MX', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </Text>
-                )}
-                  </TouchableOpacity>
-
-                  {/* Botón de convertir a nota (solo cuando no está en modo selección) */}
-                  {!selectionMode && (
-                    <TouchableOpacity
-                      onPress={() => openConvertToNoteModal(thought)}
-                      style={{ marginLeft: 8, padding: 8 }}
-                    >
-                      <Ionicons name="document-text-outline" size={20} color="#3b82f6" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            );
-          }}
+          renderItem={renderThoughtItem}
         />
       )}
 

@@ -2,7 +2,7 @@
 
 Aplicación móvil desarrollada con **React Native** y **Expo** que funciona como tu asistente personal inteligente. Permite gestionar mensajes, pensamientos, notas y listas, todo integrado con IA y sincronizado con un backend serverless en AWS.
 
-> **Versión actual**: 1.6.0  
+> **Versión actual**: 1.6.1  
 > **Backend**: Saphire Backend v0.0.4
 
 ---

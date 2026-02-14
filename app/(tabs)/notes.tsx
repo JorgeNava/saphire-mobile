@@ -19,6 +19,7 @@ import {
 import { cacheService } from '../../services/cacheService';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 import { ClipboardService } from '../../utils/clipboard';
+import { logger } from '../../utils/logger';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const NOTES_ENDPOINT = `${API_BASE}/notes`;
@@ -114,7 +115,7 @@ export default function NotesScreen() {
         const cachedNotes = await cacheService.get('cache_notes');
         if (cachedNotes && Array.isArray(cachedNotes)) {
           setNotes(cachedNotes as Note[]);
-          console.log('✅ Notas cargadas desde caché');
+          logger.log('✅ Notas cargadas desde caché');
         }
       }
 
@@ -129,7 +130,7 @@ export default function NotesScreen() {
       }
 
       const url = `${NOTES_ENDPOINT}?${params.toString()}`;
-      console.log('🔍 Fetching notes:', url);
+      logger.log('🔍 Fetching notes:', url);
 
       const res = await fetch(url);
       if (!res.ok) {
@@ -144,10 +145,10 @@ export default function NotesScreen() {
       // Guardar en caché solo primera página sin filtros
       if (resetPagination && !searchQuery) {
         await cacheService.set('cache_notes', data.items || [], 5 * 60 * 1000); // 5 minutos
-        console.log('✅ Notas guardadas en caché');
+        logger.log('✅ Notas guardadas en caché');
       }
 
-      console.log(`✅ Loaded ${data.items?.length || 0} notes`);
+      logger.log(`✅ Loaded ${data.items?.length || 0} notes`);
     } catch (err) {
       console.error('❌ Error fetching notes:', err);
       Alert.alert('Error', 'No se pudieron cargar las notas');
@@ -166,7 +167,7 @@ export default function NotesScreen() {
     setIsSearching(true);
     try {
       const url = `${NOTES_ENDPOINT}/search?userId=${userId}&q=${encodeURIComponent(query)}&limit=20`;
-      console.log('🔍 Searching:', url);
+      logger.log('🔍 Searching:', url);
 
       const res = await fetch(url);
       if (!res.ok) {
@@ -175,7 +176,7 @@ export default function NotesScreen() {
 
       const data = await res.json();
       setNotes(data.results || []);
-      console.log(`✅ Found ${data.results?.length || 0} results`);
+      logger.log(`✅ Found ${data.results?.length || 0} results`);
     } catch (err) {
       console.error('❌ Error searching:', err);
       Alert.alert('Error', 'No se pudo realizar la búsqueda');
@@ -189,8 +190,14 @@ export default function NotesScreen() {
     cacheService.startNotesSync(async () => {
       const res = await fetch(`${NOTES_ENDPOINT}?userId=${userId}&limit=20&sortOrder=desc`);
       const data = await res.json();
-      setNotes(data.items || []); // Actualizar estado con datos frescos
-      return data.items || [];
+      const freshNotes = data.items || [];
+      // Solo actualizar si los datos cambiaron
+      setNotes(prev => {
+        const prevIds = prev.map(n => n.noteId + (n.updatedAt || '')).join(',');
+        const newIds = freshNotes.map((n: any) => n.noteId + (n.updatedAt || '')).join(',');
+        return prevIds === newIds ? prev : freshNotes;
+      });
+      return freshNotes;
     });
 
     return () => {
@@ -220,7 +227,7 @@ export default function NotesScreen() {
       });
 
       if (response.ok) {
-        console.log('✅ Nota creada');
+        logger.log('✅ Nota creada');
         // Invalidar caché para forzar recarga
         await cacheService.set('cache_notes', null, 0);
         closeModal();
@@ -254,7 +261,7 @@ export default function NotesScreen() {
               });
 
               if (response.ok) {
-                console.log('✅ Nota eliminada');
+                logger.log('✅ Nota eliminada');
                 fetchNotes(false, lastKey);
               } else {
                 throw new Error('Error al eliminar');
@@ -323,15 +330,18 @@ export default function NotesScreen() {
     setRefreshing(true);
     setCurrentPage(1);
     setLastKey(null);
-    console.log('🔄 Pull-to-refresh: Cargando desde backend...');
+    logger.log('🔄 Pull-to-refresh: Cargando desde backend...');
     await fetchNotes(true, null, true); // forceRefresh = true
     setRefreshing(false);
   };
 
-  // Cargar al montar
+  // Cargar al montar y al volver (con cooldown de 30s)
   useFocusEffect(
     useCallback(() => {
-      fetchNotes(true);
+      if (cacheService.shouldFetch('notes', 30000)) {
+        fetchNotes(true);
+        cacheService.markFetched('notes');
+      }
     }, [])
   );
 

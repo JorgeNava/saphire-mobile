@@ -9,7 +9,7 @@ import {
     VStack
 } from '@gluestack-ui/themed';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     FlatList,
@@ -23,6 +23,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 import { ClipboardService } from '../../utils/clipboard';
+import { logger } from '../../utils/logger';
 
 // Interfaz actualizada para manejar tags del backend
 interface List {
@@ -77,14 +78,13 @@ export default function ListsScreen() {
 
   const itemRefs = useRef<(RNTextInput | null)[]>([]);
 
-  useEffect(() => {
-    fetchLists();
-  }, []);
-
-  // Recargar listas cuando la pantalla se enfoca (al regresar de detalle)
+  // Cargar listas al montar y al volver (con cooldown de 30s)
   useFocusEffect(
     useCallback(() => {
-      fetchLists();
+      if (cacheService.shouldFetch('lists', 30000)) {
+        fetchLists();
+        cacheService.markFetched('lists');
+      }
     }, [])
   );
 
@@ -110,7 +110,12 @@ export default function ListsScreen() {
         isLocked: !!l.isLocked,
       }));
       
-      setLists(parsed); // Actualizar estado con datos frescos
+      // Solo actualizar si los datos cambiaron (evita re-renders innecesarios)
+      setLists(prev => {
+        const prevIds = prev.map(l => l.listId + l.updatedAt).join(',');
+        const newIds = parsed.map(l => l.listId + l.updatedAt).join(',');
+        return prevIds === newIds ? prev : parsed;
+      });
       return parsed;
     });
 
@@ -127,7 +132,7 @@ export default function ListsScreen() {
         const cachedLists = await cacheService.getLists();
         if (cachedLists) {
           setLists(cachedLists);
-          console.log('✅ Listas cargadas desde caché');
+          logger.log('✅ Listas cargadas desde caché');
           return;
         }
       }
@@ -164,7 +169,7 @@ export default function ListsScreen() {
       
       // Guardar en caché
       await cacheService.setLists(parsed);
-      console.log('✅ Listas guardadas en caché');
+      logger.log('✅ Listas guardadas en caché');
     } catch (err) {
       console.error('❌ Error fetching lists:', err);
       Alert.alert('Error', 'No se pudo cargar las listas');
@@ -267,7 +272,7 @@ export default function ListsScreen() {
       // Generar nombre de lista: usar el personalizado o el nombre de las etiquetas
       const listName = customListName.trim() || selectedTags.join(', ');
 
-      console.log('📤 Creando lista desde etiquetas:', {
+      logger.log('📤 Creando lista desde etiquetas:', {
         userId: 'user123',
         tagNames: selectedTags,
         listName,
@@ -287,11 +292,11 @@ export default function ListsScreen() {
         }),
       });
 
-      console.log('📥 Response status:', createRes.status);
+      logger.log('📥 Response status:', createRes.status);
 
       if (!createRes.ok) {
         const error = await createRes.json();
-        console.log('❌ Error response:', error);
+        logger.log('❌ Error response:', error);
         
         if (error.error === 'NO_THOUGHTS_FOUND') {
           Alert.alert(
@@ -305,7 +310,7 @@ export default function ListsScreen() {
       }
 
       const list = await createRes.json();
-      console.log('✅ Lista creada desde etiquetas:', list);
+      logger.log('✅ Lista creada desde etiquetas:', list);
       // Invalidar caché de listas
       await cacheService.set('cache_lists', null, 0);
       Alert.alert('Éxito', `Lista "${list.name}" creada con ${list.thoughtsFound} pensamientos`);
@@ -351,7 +356,7 @@ export default function ListsScreen() {
   // Pull to refresh
   const onRefresh = async () => {
     setRefreshing(true);
-    console.log('🔄 Pull-to-refresh: Cargando desde backend...');
+    logger.log('🔄 Pull-to-refresh: Cargando desde backend...');
     await fetchLists(true); // forceRefresh = true
     setRefreshing(false);
   };
@@ -361,13 +366,16 @@ export default function ListsScreen() {
     ClipboardService.shareList(list.name, list.items);
   };
 
-  // Filtrar listas por búsqueda
-  const filteredLists = searchQuery.trim()
-    ? lists.filter(list => 
-        list.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        list.tagNames.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : lists;
+  // Filtrar listas por búsqueda (memoizado)
+  const filteredLists = useMemo(() => 
+    searchQuery.trim()
+      ? lists.filter(list => 
+          list.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          list.tagNames.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+        )
+      : lists,
+    [lists, searchQuery]
+  );
 
   // Renderizar item de lista con UI mejorada
   const renderListItem = ({ item }: { item: List }) => {
@@ -473,7 +481,7 @@ export default function ListsScreen() {
                       style: 'destructive',
                       onPress: async () => {
                         try {
-                          console.log('🗑️ Eliminando lista:', item.listId);
+                          logger.log('🗑️ Eliminando lista:', item.listId);
                           
                           const response = await fetch(`${API_BASE}/lists`, {
                             method: 'DELETE',
@@ -491,7 +499,7 @@ export default function ListsScreen() {
                             return;
                           }
 
-                          console.log('✅ Lista eliminada exitosamente:', item.listId);
+                          logger.log('✅ Lista eliminada exitosamente:', item.listId);
                           await cacheService.invalidateLists();
                           setLists(prev => prev.filter(l => l.listId !== item.listId));
                           Alert.alert('Éxito', `Lista "${item.name}" eliminada correctamente`);

@@ -10,7 +10,7 @@ import {
 import { Buffer } from 'buffer';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     FlatList,
@@ -27,6 +27,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
+import { logger } from '../../utils/logger';
 
 interface Message {
   id: string;
@@ -114,7 +115,7 @@ export default function ChatScreen() {
         const tagsArray = Array.isArray(data) ? data : (data.items || []);
         setAvailableTags(tagsArray);
         await cacheService.setTags(tagsArray);
-        console.log('✅ Tags cargados:', tagsArray.length);
+        logger.log('✅ Tags cargados:', tagsArray.length);
       }
     } catch (err) {
       console.error('Error loading tags:', err);
@@ -127,7 +128,7 @@ export default function ChatScreen() {
       const cachedMessages = await cacheService.getMessages();
       if (cachedMessages && cachedMessages.length > 0) {
         setMessages(cachedMessages);
-        console.log('✅ Mensajes cargados desde caché (temporal)');
+        logger.log('✅ Mensajes cargados desde caché (temporal)');
       }
 
       // SIEMPRE obtener del servidor para tener los mensajes más recientes
@@ -153,7 +154,7 @@ export default function ChatScreen() {
         
         // Guardar en caché
         await cacheService.setMessages(formattedMessages);
-        console.log(`✅ ${formattedMessages.length} mensajes cargados desde servidor`);
+        logger.log(`✅ ${formattedMessages.length} mensajes cargados desde servidor`);
       }
     } catch (err) {
       console.error('Error loading messages:', err);
@@ -183,8 +184,13 @@ export default function ChatScreen() {
         sentAt: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
       }));
       
-      setMessages(formattedMessages);
-      console.log(`🔄 Sincronización: ${formattedMessages.length} mensajes actualizados`);
+      // Solo actualizar si los datos cambiaron
+      setMessages(prev => {
+        const prevIds = prev.map(m => m.id).join(',');
+        const newIds = formattedMessages.map(m => m.id).join(',');
+        return prevIds === newIds ? prev : formattedMessages;
+      });
+      if (__DEV__) logger.log(`🔄 Sincronización: ${formattedMessages.length} mensajes`);
       return formattedMessages;
     });
 
@@ -203,7 +209,7 @@ export default function ChatScreen() {
       const cachedTags = await cacheService.getTags();
       if (cachedTags && Array.isArray(cachedTags)) {
         setAvailableTags(cachedTags);
-        console.log('✅ Tags cargados desde caché:', cachedTags.length);
+        logger.log('✅ Tags cargados desde caché:', cachedTags.length);
       }
     } catch (err) {
       console.error('❌ Error loading cached tags:', err);
@@ -214,7 +220,7 @@ export default function ChatScreen() {
   const handleTagsLoaded = async (loadedTags: Array<{tagId: string; name: string}>) => {
     setAvailableTags(loadedTags);
     await cacheService.setTags(loadedTags);
-    console.log('✅ Tags cargados y guardados en caché:', loadedTags.length);
+    logger.log('✅ Tags cargados y guardados en caché:', loadedTags.length);
   };
 
   // Iniciar sincronización en background de etiquetas
@@ -257,9 +263,10 @@ export default function ChatScreen() {
     });
   };
 
-  const filteredAvailableTags = availableTags.filter(t =>
-    t.name.toLowerCase().includes(tagSearch.toLowerCase())
-  );
+  const filteredAvailableTags = useMemo(() =>
+    availableTags.filter(t =>
+      t.name.toLowerCase().includes(tagSearch.toLowerCase())
+    ), [availableTags, tagSearch]);
 
   const handleSend = async () => {
     if (!text.trim()) return;
@@ -269,7 +276,7 @@ export default function ChatScreen() {
     const currentTags = tags.trim();
     const tagArray = currentTags ? currentTags.split(',').map(t => t.trim()).filter(t => t) : [];
     
-    console.log('📤 Enviando mensaje:', {
+    logger.log('📤 Enviando mensaje:', {
       content: text,
       tags: currentTags,
       tagArray: tagArray
@@ -296,7 +303,7 @@ export default function ChatScreen() {
         })
       };
       
-      console.log('📦 Payload completo:', payload);
+      logger.log('📦 Payload completo:', payload);
       
       const response = await fetch(TEXT_ENDPOINT, {
         method: 'POST',
@@ -448,7 +455,7 @@ export default function ChatScreen() {
     if (!text.trim()) stopRecording();
   };
 
-  const renderItem: ListRenderItem<Message> = ({ item, index }) => {
+  const renderItem: ListRenderItem<Message> = useCallback(({ item, index }) => {
     // Day separator logic (FlatList is inverted, so index 0 = newest)
     const currentDay = item.sentAt ? getDayLabel(item.sentAt) : null;
     const nextItem = messages[index + 1]; // older message (inverted)
@@ -566,7 +573,7 @@ export default function ChatScreen() {
         </HStack>
       </View>
     );
-  };
+  }, [messages, isDark, theme]);
 
   return (
     <KeyboardAvoidingView

@@ -7,6 +7,58 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.6.1] - 2026-02-14
+
+### ⚡ Rendimiento
+
+#### Memoización y Re-renders
+- **`useCallback` en renderItem**: Chat y Thoughts FlatLists ya no recrean la función de render en cada ciclo
+- **`useMemo` para filteredTags**: Chat filtra etiquetas solo cuando `availableTags` o `tagSearch` cambian
+- **`useMemo` para filteredLists**: Listas filtra solo cuando `lists` o `searchQuery` cambian
+- **Comparación de datos en background sync**: `setState` solo se ejecuta si los datos realmente cambiaron (chat, thoughts, notes, lists)
+
+#### Caché y Sincronización
+- **Cache TTLs aumentados**: Tags 5→10min, Lists 2→5min, Messages 1→5min, Thoughts 2→5min, Notes 5min
+- **Background sync intervals**: Todos ajustados a 4-8 min (antes 45s-90s)
+- **Smart `useFocusEffect`**: Cooldown de 30s evita re-fetches innecesarios al cambiar de tab (thoughts, notes, lists)
+- **Consolidación de useEffects**: Eliminados `useEffect` + `useFocusEffect` duplicados
+
+#### Logs en Producción
+- **Logger utility** (`utils/logger.ts`): `console.log` silenciado en producción via `__DEV__`
+- **62 console.logs** reemplazados por `logger.log` en chat, thoughts, notes, lists, cacheService
+
+#### KeyExtractor Estable
+- **Fix `Math.random()`**: Thoughts usa `createdAt` como fallback en lugar de `Math.random()` (evita re-mounts)
+
+### 🔧 Corregido
+
+#### Búsqueda en Pensamientos
+- **Fix stale closure**: Al limpiar búsqueda con ✕, ahora carga todos los pensamientos correctamente
+- **Filtrado client-side gated**: Solo aplica filtro de contenido cuando `applyFilters=true`
+- **Reset completo al limpiar**: Limpia búsqueda, tags, fecha, paginación e historial
+
+#### Pantalla Info
+- **Actualizada a v1.6.1**: Todas las funcionalidades actuales reflejadas
+- **Nuevas secciones**: Etiquetas, Rendimiento, Tecnologías actualizadas
+
+### 📝 Cambios Técnicos
+
+#### Archivos Nuevos
+- `utils/logger.ts`: Logger que silencia logs en producción
+
+#### Archivos Modificados
+- `services/cacheService.ts`: TTLs, sync intervals, `shouldFetch`/`markFetched` para cooldowns
+- `app/(tabs)/index.tsx`: useCallback renderItem, useMemo filteredTags, logger, sync comparison
+- `app/(tabs)/thoughts.tsx`: useCallback renderItem, stable keyExtractor, smart useFocusEffect, logger, search fix
+- `app/(tabs)/notes.tsx`: Smart useFocusEffect, sync comparison, logger
+- `app/(tabs)/lists.tsx`: Smart useFocusEffect, useMemo filteredLists, sync comparison, logger
+- `app/(tabs)/info.tsx`: Actualizada con todas las funcionalidades y v1.6.1
+- `package.json`: Version 1.6.0 → 1.6.1
+- `app.json`: Version 1.6.0 → 1.6.1
+- `README.md`: Version 1.6.0 → 1.6.1
+
+---
+
 ## [1.6.0] - 2026-02-14
 
 ### ✨ Añadido
