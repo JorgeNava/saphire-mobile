@@ -7,6 +7,52 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.7.0] - 2026-02-14
+
+### ✨ Añadido
+
+#### 📡 Modo Offline
+- **NetworkService**: Monitoreo de conexión en tiempo real con `@react-native-community/netinfo`
+- **OfflineBanner**: Banner animado que muestra estado de conexión (rojo=offline, verde=sincronizado)
+- **OfflineQueue**: Cola de operaciones pendientes que se ejecutan al restaurar conexión
+- **fetchWithOffline utility**: Wrapper para fetch que encola operaciones de escritura cuando no hay internet
+- **Caché persistente**: Los datos cacheados ya no se borran cuando expiran si no hay internet
+- **Mensajes offline**: El chat permite enviar mensajes sin internet (se encolan y sincronizan después)
+
+#### Comportamiento por Pantalla sin Internet
+- **Chat**: Muestra mensajes cacheados, permite enviar (se encola)
+- **Pensamientos**: Muestra pensamientos cacheados (modo lectura)
+- **Notas**: Muestra notas cacheadas (modo lectura)
+- **Listas**: Muestra listas cacheadas (modo lectura)
+- **Etiquetas**: Muestra etiquetas cacheadas
+
+#### Auto-Sync al Reconectar
+- Operaciones pendientes se procesan automáticamente
+- Banner verde confirma sincronización exitosa (3s)
+- Errores 4xx se descartan, errores 5xx se reintentan
+
+### 📝 Cambios Técnicos
+
+#### Archivos Nuevos
+- `services/networkService.ts`: Singleton de monitoreo de red con listeners
+- `services/offlineQueue.ts`: Cola persistente en AsyncStorage para operaciones offline
+- `components/OfflineBanner.tsx`: Componente de banner de estado de conexión
+- `utils/fetchWithOffline.ts`: Utility para fetch con soporte offline
+
+#### Archivos Modificados
+- `services/cacheService.ts`: `get()` retorna datos expirados cuando no hay internet
+- `app/_layout.tsx`: Inicializa networkService y monta OfflineBanner
+- `app/(tabs)/index.tsx`: Offline check en loadMessages, loadTags, handleSend
+- `app/(tabs)/thoughts.tsx`: Offline check en fetchMessages
+- `app/(tabs)/notes.tsx`: Offline check en fetchNotes
+- `app/(tabs)/lists.tsx`: Offline check en fetchLists
+- `app/(tabs)/info.tsx`: Actualizada con sección offline y v1.7.0
+- `package.json`: Version 1.6.1 → 1.7.0, añadido @react-native-community/netinfo
+- `app.json`: Version 1.6.1 → 1.7.0
+- `README.md`: Version 1.6.1 → 1.7.0
+
+---
+
 ## [1.6.1] - 2026-02-14
 
 ### ⚡ Rendimiento

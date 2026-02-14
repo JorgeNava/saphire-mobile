@@ -18,18 +18,17 @@ export default function HomeScreen() {
     >
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="title">Saphire Mobile</ThemedText>
-        <ThemedText>Versión 1.6.1</ThemedText>
+        <ThemedText>Versión 1.7.0</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">✨ Novedades v1.6.0</ThemedText>
-        <ThemedText>• Chat: separadores por día y hora en burbuja</ThemedText>
-        <ThemedText>• Chat: selector de etiquetas con chips</ThemedText>
-        <ThemedText>• Búsqueda por contenido en pensamientos</ThemedText>
-        <ThemedText>• Bloqueo biométrico con degradación graciosa</ThemedText>
-        <ThemedText>• Teclado no mueve la barra de navegación</ThemedText>
-        <ThemedText>• Optimizaciones de rendimiento (caché, memoización)</ThemedText>
-        <ThemedText>• Botón compartir en detalle de lista</ThemedText>
+        <ThemedText type="subtitle">✨ Novedades v1.7.0</ThemedText>
+        <ThemedText>• Modo offline: la app funciona sin internet</ThemedText>
+        <ThemedText>• Banner de estado de conexión en tiempo real</ThemedText>
+        <ThemedText>• Cola de operaciones pendientes offline</ThemedText>
+        <ThemedText>• Caché persistente que no expira sin internet</ThemedText>
+        <ThemedText>• Sincronización automática al restaurar conexión</ThemedText>
+        <ThemedText>• Mensajes se envían al volver online</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>

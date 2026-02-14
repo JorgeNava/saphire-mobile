@@ -17,6 +17,7 @@ import {
     useColorScheme
 } from 'react-native';
 import { cacheService } from '../../services/cacheService';
+import { networkService } from '../../services/networkService';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 import { ClipboardService } from '../../utils/clipboard';
 import { logger } from '../../utils/logger';
@@ -117,6 +118,16 @@ export default function NotesScreen() {
           setNotes(cachedNotes as Note[]);
           logger.log('✅ Notas cargadas desde caché');
         }
+      }
+
+      // Sin internet: usar solo caché
+      if (!networkService.isConnected) {
+        const cachedNotes = await cacheService.get('cache_notes');
+        if (cachedNotes && Array.isArray(cachedNotes)) {
+          setNotes(cachedNotes as Note[]);
+        }
+        setLoading(false);
+        return;
       }
 
       const params = new URLSearchParams();

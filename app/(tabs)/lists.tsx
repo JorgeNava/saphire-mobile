@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
+import { networkService } from '../../services/networkService';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 import { ClipboardService } from '../../utils/clipboard';
 import { logger } from '../../utils/logger';
@@ -137,8 +138,14 @@ export default function ListsScreen() {
         }
       }
 
+      // Sin internet: usar solo caché
+      if (!networkService.isConnected) {
+        const cachedLists = await cacheService.getLists();
+        if (cachedLists) setLists(cachedLists);
+        return;
+      }
+
       // Si no hay caché, obtener del servidor
-      // Nota: Lists puede o no tener paginación según la API, mantenemos compatibilidad
       const res = await fetch(`${API_BASE}/lists?userId=user123&limit=50`);
       
       if (!res.ok) {

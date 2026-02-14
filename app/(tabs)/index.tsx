@@ -27,6 +27,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
+import { networkService } from '../../services/networkService';
+import { offlineQueue } from '../../services/offlineQueue';
 import { logger } from '../../utils/logger';
 
 interface Message {
@@ -109,6 +111,7 @@ export default function ChatScreen() {
       if (cachedTags && cachedTags.length > 0) {
         setAvailableTags(cachedTags);
       }
+      if (!networkService.isConnected) return;
       const res = await fetch(`${API_BASE}/tags?userId=user123&limit=1000`);
       if (res.ok) {
         const data = await res.json();
@@ -131,8 +134,9 @@ export default function ChatScreen() {
         logger.log('✅ Mensajes cargados desde caché (temporal)');
       }
 
-      // SIEMPRE obtener del servidor para tener los mensajes más recientes
-      // sortOrder=desc trae los más recientes primero
+      // Sin internet: usar solo caché
+      if (!networkService.isConnected) return;
+
       const res = await fetch(`${TEXT_ENDPOINT}?conversationId=${CONVERSATION_ID}&limit=100&sortOrder=desc`);
       if (res.ok) {
         const data = await res.json();
@@ -304,6 +308,22 @@ export default function ChatScreen() {
       };
       
       logger.log('📦 Payload completo:', payload);
+
+      // Si no hay internet, encolar y mostrar como enviado localmente
+      if (!networkService.isConnected) {
+        await offlineQueue.enqueue({
+          url: TEXT_ENDPOINT,
+          method: 'POST',
+          body: payload,
+          headers: { 'Content-Type': 'application/json' },
+          description: `Enviar mensaje: "${text.substring(0, 30)}..."`,
+        });
+        setMessages(prev =>
+          prev.map(m => m.id === id ? { ...m, status: 'sent' as const, sentAt: Date.now() } : m)
+        );
+        setSendingText(false);
+        return;
+      }
       
       const response = await fetch(TEXT_ENDPOINT, {
         method: 'POST',

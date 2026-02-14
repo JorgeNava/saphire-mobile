@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { networkService } from './networkService';
 
 // Tipos para el caché
 export interface CacheEntry<T> {
@@ -69,12 +70,12 @@ class CacheService {
 
       const entry: CacheEntry<T> = JSON.parse(item);
       
-      // Verificar si el caché ha expirado
-      if (Date.now() > entry.expiresAt) {
-        await this.remove(key);
-        return null;
+      // Si hay internet, verificar expiración normalmente
+      if (networkService.isConnected && Date.now() > entry.expiresAt) {
+        return null; // Expirado, pero no borrar (sirve como fallback offline)
       }
 
+      // Sin internet: siempre retornar datos aunque estén expirados
       return entry.data;
     } catch (error) {
       console.error(`Error reading from cache (${key}):`, error);

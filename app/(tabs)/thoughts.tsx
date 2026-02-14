@@ -22,6 +22,7 @@ import {
     useColorScheme
 } from 'react-native';
 import { cacheService } from '../../services/cacheService';
+import { networkService } from '../../services/networkService';
 import { logger } from '../../utils/logger';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
@@ -149,6 +150,16 @@ export default function ThoughtsScreen() {
           setLoading(false);
           return;
         }
+      }
+
+      // Sin internet: usar solo caché
+      if (!networkService.isConnected) {
+        const cachedThoughts = await cacheService.get('cache_thoughts');
+        if (cachedThoughts && Array.isArray(cachedThoughts)) {
+          setMessages(cachedThoughts as Message[]);
+        }
+        setLoading(false);
+        return;
       }
 
       const params = new URLSearchParams();
