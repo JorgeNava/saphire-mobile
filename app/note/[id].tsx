@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from 'react-native';
 import { cacheService } from '../../services/cacheService';
+import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const NOTES_ENDPOINT = `${API_BASE}/notes`;
@@ -33,6 +34,7 @@ interface Note {
   updatedAt: string;
   createdBy: string;
   lastModifiedBy: string;
+  isLocked?: boolean;
   deletedAt?: string;
   deletedBy?: string;
 }
@@ -51,10 +53,53 @@ export default function NoteDetailScreen() {
     border: isDark ? '#2A2F4A' : '#E5E7EB',
   };
 
+  const toggleNoteLock = async () => {
+    if (!note) return;
+
+    const nextLockedState = !isLocked;
+
+    // Solo pedir huella al DESBLOQUEAR, no al bloquear
+    if (!nextLockedState) {
+      const authenticated = await authenticateWithBiometrics('Desactivar protección de nota');
+      if (!authenticated) {
+        Alert.alert('Acceso denegado', 'No se pudo verificar tu identidad biométrica.');
+        return;
+      }
+    }
+
+    try {
+      const response = await fetch(`${NOTES_ENDPOINT}/${note.noteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          title: title.trim() || note.title,
+          content: content.trim() || note.content,
+          tagNames: tagArray,
+          tagSource: 'Manual',
+          isLocked: nextLockedState,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('No se pudo actualizar el estado de seguridad de la nota');
+      }
+
+      setIsLocked(nextLockedState);
+      setNote((prev) => (prev ? { ...prev, isLocked: nextLockedState } : prev));
+      await cacheService.set('cache_notes', null, 0);
+    } catch (err) {
+      console.error('❌ Error toggling note lock:', err);
+      Alert.alert('Error', 'No se pudo actualizar el bloqueo de la nota');
+    }
+  };
+
   const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
 
   // Estados editables
   const [title, setTitle] = useState('');
@@ -75,12 +120,14 @@ export default function NoteDetailScreen() {
       }
 
       const data = await response.json();
+
       setNote(data);
       setTitle(data.title);
       setContent(data.content);
       const tagsArray = data.tagNames || [];
       setTags(tagsArray.join(', '));
       setTagArray(tagsArray);
+      setIsLocked(!!data.isLocked);
     } catch (err) {
       console.error('❌ Error:', err);
       Alert.alert('Error', 'No se pudo cargar la nota');
@@ -93,6 +140,45 @@ export default function NoteDetailScreen() {
   useEffect(() => {
     fetchNote();
   }, [fetchNote]);
+
+  // Detectar cambios
+  useEffect(() => {
+    if (!note) return;
+    
+    const titleChanged = title !== note.title;
+    const contentChanged = content !== note.content;
+    const tagsChanged = JSON.stringify(tagArray.sort()) !== JSON.stringify((note.tagNames || []).sort());
+    
+    setHasUnsavedChanges(titleChanged || contentChanged || tagsChanged);
+  }, [title, content, tagArray, note]);
+
+  // Auto-guardar al salir
+  useEffect(() => {
+    return () => {
+      // Cleanup: guardar automáticamente si hay cambios
+      if (hasUnsavedChanges && note && title.trim() && content.trim()) {
+        // Guardar sin mostrar alert
+        fetch(`${NOTES_ENDPOINT}/${note.noteId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            title: title.trim(),
+            content: content.trim(),
+            tagNames: tagArray,
+            tagSource: 'Manual',
+          }),
+        })
+        .then(response => {
+          if (response.ok) {
+            console.log('✅ Nota guardada automáticamente al salir');
+            cacheService.set('cache_notes', null, 0);
+          }
+        })
+        .catch(err => console.error('❌ Error auto-guardando:', err));
+      }
+    };
+  }, [hasUnsavedChanges, note, title, content, tagArray]);
 
   // Agregar tag
   const addTag = () => {
@@ -134,6 +220,7 @@ export default function NoteDetailScreen() {
         console.log('✅ Nota actualizada');
         // Invalidar caché
         await cacheService.set('cache_notes', null, 0);
+        setHasUnsavedChanges(false);
         Alert.alert('Éxito', 'Nota actualizada correctamente', [
           { text: 'OK', onPress: () => router.back() }
         ]);
@@ -216,11 +303,19 @@ export default function NoteDetailScreen() {
             <Ionicons name="arrow-back" size={26} color={theme.text} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
-              {title || 'Nota'}
-            </Text>
+            <View style={styles.headerTitleRow}>
+              <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
+                {title || 'Nota'}
+              </Text>
+            </View>
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={toggleNoteLock}
+              style={styles.lockButton}
+            >
+              <Ionicons name={isLocked ? 'lock-closed' : 'lock-open-outline'} size={22} color={isLocked ? '#f59e0b' : theme.text} />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={deleteNote}
               disabled={deleting}
@@ -248,7 +343,7 @@ export default function NoteDetailScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
@@ -332,6 +427,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -342,6 +441,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   saveIconButton: {
+    padding: 8,
+  },
+  lockButton: {
     padding: 8,
   },
   deleteButton: {

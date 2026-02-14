@@ -7,6 +7,86 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.6.0] - 2026-02-14
+
+### ✨ Añadido
+
+#### 💬 Chat - Rediseño de Mensajes y Etiquetas
+- **Separadores por día**: Mensajes agrupados por "Hoy", "Ayer" o fecha (estilo WhatsApp)
+- **Hora dentro de burbuja**: Timestamp pequeño abajo a la derecha de cada mensaje
+- **Selector de etiquetas con chips**: Reemplazo del input de texto por chips tappables
+- **Panel de etiquetas**: Toggle con botón, búsqueda horizontal, chips removibles
+- **Carga explícita de tags**: Tags se cargan al montar (caché + servidor)
+
+#### 🔍 Búsqueda por Contenido en Pensamientos
+- **Barra de búsqueda**: Nuevo input con icono de búsqueda arriba del selector de etiquetas
+- **Filtrado client-side**: Búsqueda instantánea por contenido (funciona sin deploy de backend)
+- **Botón limpiar**: Icono ✕ para resetear búsqueda
+- **Integración backend**: Parámetro `searchTerm` preparado para `getThoughts` lambda
+
+#### 🔒 Bloqueo Biométrico Mejorado
+- **Degradación graciosa**: Si biometría no está disponible (Expo Go), permite acceso en vez de bloquearlo
+- **Nueva función `isBiometricAvailable()`**: Para verificar disponibilidad de biometría
+- **Lock toggle en listas**: Icono lock/lock-open (igual que notas)
+
+#### 🔗 Botón Compartir en Listas
+- **Reemplazo**: Botón de copiar cambiado por compartir directo con `ClipboardService.shareList()`
+- **Icono**: Material Icons `share` en lugar de `content-copy`
+
+### 🔧 Corregido
+
+#### Teclado y Navegación
+- **Tab bar no se sube con keyboard**: `Keyboard` listener oculta tab bar instantáneamente con `display: 'none'`
+- **`tabBarHideOnKeyboard: true`**: Tab bar se oculta limpiamente al abrir teclado
+- **`KeyboardAvoidingView` unificado**: `behavior="padding"` en todas las pantallas (chat, notas, listas)
+- **Input visible al escribir**: Inputs no quedan cubiertos por el teclado
+
+#### Pensamientos - Orden Consistente
+- **Editar**: Actualiza localmente sin re-fetch (mantiene orden de la lista)
+- **Eliminar**: Remueve localmente sin re-fetch (mantiene orden de la lista)
+- **Fix stale closure**: Botón limpiar búsqueda ya no usa estado desactualizado
+
+#### Listas - Lock Toggle
+- **Backend fix**: `ExpressionAttributeNames` solo se incluye cuando hay campos que lo usan
+- **Frontend workaround**: Envía datos completos de la lista al cambiar lock (compatibilidad con backend viejo)
+- **Error detallado**: Alert muestra HTTP status y mensaje del backend para debug
+
+#### UI
+- **Subtítulo "Tu asistente inteligente"**: Color blanco para visibilidad
+- **Separadores de día**: Texto en blanco
+- **Icono de búsqueda en listas**: Centrado verticalmente con `alignItems: 'center'`
+
+### 🎨 Mejorado
+
+#### Performance (Análisis Completo)
+- **Identificados 10 puntos de optimización** para futuras versiones:
+  - Memoización de `renderItem` con `React.memo`
+  - Smart `useFocusEffect` con cooldown
+  - Comparar datos en background sync antes de setState
+  - `useMemo` para cálculos derivados
+  - Contexto global para tags
+  - Eliminación de `Math.random()` en keyExtractor
+
+### 📝 Cambios Técnicos
+
+#### Archivos Modificados
+- `app/(tabs)/index.tsx`: Chat timestamps, day separators, chip tag selector, KAV fix
+- `app/(tabs)/thoughts.tsx`: Content search, local state updates for edit/delete
+- `app/(tabs)/lists.tsx`: Search icon alignment
+- `app/(tabs)/notes.tsx`: KAV behavior=padding
+- `app/(tabs)/_layout.tsx`: Keyboard listener for tab bar hide
+- `app/list/[id].tsx`: Lock toggle fix, share button, KAV fix
+- `app/note/[id].tsx`: KAV behavior=padding
+- `app.json`: Version bump to 1.6.0
+- `utils/biometricAuth.ts`: Graceful degradation + isBiometricAvailable
+- `package.json`: Version 1.5.1 → 1.6.0
+
+#### Backend (saphire-backend)
+- `lambdas/lists/updateList/index.js`: Fix ExpressionAttributeNames bug
+- `lambdas/thoughts/getThoughts/index.js`: Add searchTerm filter
+
+---
+
 ## [1.5.1] - 2025-11-10
 
 ### 🔧 Corregido

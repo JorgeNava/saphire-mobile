@@ -1,30 +1,31 @@
 // app/list/[id].tsx
 import {
-  Box,
-  HStack,
-  Icon,
-  Pressable,
-  Text,
+    Box,
+    HStack,
+    Pressable,
+    Text,
 } from '@gluestack-ui/themed';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  Animated,
-  Dimensions,
-  FlatList,
-  Keyboard,
-  KeyboardAvoidingView,
-  ListRenderItem,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  useColorScheme,
+    Alert,
+    Animated,
+    Dimensions,
+    FlatList,
+    KeyboardAvoidingView,
+    ListRenderItem,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    TouchableOpacity,
+    View,
+    useColorScheme
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
+import { authenticateWithBiometrics } from '../../utils/biometricAuth';
+import { ClipboardService } from '../../utils/clipboard';
 
 const API_BASE =
   'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
@@ -70,10 +71,13 @@ export default function ListDetailScreen() {
 
   // Nombre de la lista para el header
   const [listName, setListName] = useState<string>('');
+  const [editingName, setEditingName] = useState(false);
+  const [tempName, setTempName] = useState<string>('');
   
   // Indica si la lista fue creada desde etiquetas
   const [createdFromTags, setCreatedFromTags] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -95,7 +99,7 @@ export default function ListDetailScreen() {
           Alert.alert('Error', 'Lista no encontrada');
           return router.back();
         }
-        
+
         // Normalizar items: pueden ser strings o objetos {itemId, content, completed}
         const normalizedItems = (lst.items || []).map((item: any) => 
           typeof item === 'string' 
@@ -112,6 +116,7 @@ export default function ListDetailScreen() {
         setTagNames(lst.tagNames || lst.tags || []);
         setListName(lst.name || '');
         setCreatedFromTags(lst.createdFromTags || false);
+        setIsLocked(!!lst.isLocked);
         setFullListData(lst);
         loadAvailableTags();
       } catch (err) {
@@ -321,11 +326,12 @@ export default function ListDetailScreen() {
 
   // Actualizar items en el servidor
   const updateListItems = async (updatedItems: any[]) => {
+    const { isLocked: _lock, ...listDataWithoutLock } = fullListData || {};
     const res = await fetch(`${API_BASE}/lists/${listId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...fullListData,
+        ...listDataWithoutLock,
         items: updatedItems,
         updatedAt: new Date().toISOString(),
         lastModifiedBy: 'user123'
@@ -403,8 +409,9 @@ export default function ListDetailScreen() {
       updatedTagIds.splice(idx, 1);
       updatedTagNames.splice(idx, 1);
       
+      const { isLocked: _lock, ...listDataWithoutLock } = fullListData || {};
       const updatedList = {
-        ...fullListData,
+        ...listDataWithoutLock,
         tagIds: updatedTagIds,
         tagNames: updatedTagNames,
         updatedAt: new Date().toISOString(),
@@ -446,8 +453,9 @@ export default function ListDetailScreen() {
     }
     
     try {
+      const { isLocked: _lock, ...listDataWithoutLock } = fullListData || {};
       const updatedList = {
-        ...fullListData,
+        ...listDataWithoutLock,
         tagIds: [...tagIds, tag.tagId],
         tagNames: [...tagNames, tag.name],
         tagSource: 'Manual',
@@ -503,11 +511,10 @@ export default function ListDetailScreen() {
         onPress={() => toggleItemCompleted(index)}
         sx={{ marginRight: '$3' }}
       >
-        <Icon 
-          as={MaterialIcons} 
+        <MaterialIcons 
           name={isCompleted ? "check-box" : "check-box-outline-blank"} 
-          size="md" 
-          color={isCompleted ? "$green500" : theme.text} 
+          size={22} 
+          color={isCompleted ? "#22c55e" : theme.text} 
         />
       </Pressable>
 
@@ -538,7 +545,7 @@ export default function ListDetailScreen() {
             bg: 'rgba(59, 130, 246, 0.1)'
           }}
         >
-          <Icon as={MaterialIcons} name="edit" size="sm" color="$blue500" />
+          <MaterialIcons name="edit" size={18} color="#3b82f6" />
         </Pressable>
         
         <Pressable 
@@ -549,7 +556,7 @@ export default function ListDetailScreen() {
             bg: 'rgba(239, 68, 68, 0.1)'
           }}
         >
-          <Icon as={MaterialIcons} name="delete" size="sm" color="$red500" />
+          <MaterialIcons name="delete" size={18} color="#ef4444" />
         </Pressable>
       </HStack>
     </HStack>
@@ -673,7 +680,7 @@ export default function ListDetailScreen() {
               </Pressable>
               {selectedTag === idx && (
                 <Pressable onPress={() => removeTag(idx)} sx={{ ml: '$2' }}>
-                  <Icon as={MaterialIcons} name="close" size="xs" color="$white" />
+                  <MaterialIcons name="close" size={14} color="#FFFFFF" />
                 </Pressable>
               )}
             </HStack>
@@ -694,7 +701,7 @@ export default function ListDetailScreen() {
               bg: showTagPicker ? '$blue500' : 'transparent',
             }}
           >
-            <Icon as={MaterialIcons} name="add" size="xs" color="$white" />
+            <MaterialIcons name="add" size={14} color="#FFFFFF" />
           </HStack>
         </Pressable>
       </HStack>
@@ -806,31 +813,249 @@ export default function ListDetailScreen() {
       setIsRefreshing(false);
     }
   };
+
+  // Editar nombre de lista
+  const startEditingName = () => {
+    setTempName(listName);
+    setEditingName(true);
+  };
+
+  const saveListName = async () => {
+    if (!tempName.trim()) {
+      Alert.alert('Error', 'El nombre no puede estar vacío');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/lists/${listId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: 'user123',
+          name: tempName.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setListName(tempName.trim());
+        setEditingName(false);
+        await cacheService.invalidateLists();
+        Alert.alert('Éxito', 'Nombre actualizado');
+      } else {
+        Alert.alert('Error', 'No se pudo actualizar el nombre');
+      }
+    } catch (err) {
+      console.error('❌ Error updating list name:', err);
+      Alert.alert('Error', 'No se pudo actualizar el nombre');
+    }
+  };
+
+  const cancelEditingName = () => {
+    setEditingName(false);
+    setTempName('');
+  };
+
+  const toggleListLock = async () => {
+    if (!listId) return;
+
+    const nextLockedState = !isLocked;
+
+    // Solo pedir huella al DESBLOQUEAR, no al bloquear
+    if (!nextLockedState) {
+      const authenticated = await authenticateWithBiometrics('Desactivar protección de lista');
+      if (!authenticated) {
+        Alert.alert('Acceso denegado', 'No se pudo verificar tu identidad biométrica.');
+        return;
+      }
+    }
+
+    try {
+      // Enviar datos completos de la lista con isLocked cambiado
+      const { isLocked: _prevLock, listId: _id, createdAt: _ca, ...restData } = fullListData || {};
+      const payload = {
+        ...restData,
+        userId: 'user123',
+        name: listName || fullListData?.name || 'Lista',
+        items: items.map((item: any) => 
+          typeof item === 'string' 
+            ? { content: item } 
+            : { itemId: item.itemId, content: item.content, completed: item.completed, order: item.order }
+        ),
+        isLocked: nextLockedState,
+      };
+      
+      console.log('🔒 Toggle lock payload:', JSON.stringify(payload).substring(0, 200));
+      
+      const response = await fetch(`${API_BASE}/lists/${listId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Lock update error:', response.status, errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      setIsLocked(nextLockedState);
+      setFullListData((prev: any) => (prev ? { ...prev, isLocked: nextLockedState } : prev));
+      await cacheService.invalidateLists();
+    } catch (err: any) {
+      console.error('❌ Error toggling list lock:', err);
+      Alert.alert('Error', err.message || 'No se pudo actualizar el bloqueo de la lista');
+    }
+  };
+
   return (
     <>
       <Stack.Screen 
         options={{ 
           title: listName || `Lista ${listId}`,
-          headerRight: createdFromTags ? () => (
-            <Pressable
-              onPress={refreshListFromTags}
-              disabled={isRefreshing}
-              sx={{
-                mr: '$2',
-                p: '$2',
-                opacity: isRefreshing ? 0.5 : 1,
-              }}
-            >
-              <Icon
-                as={MaterialIcons}
-                name="refresh"
-                size="md"
-                color={isDark ? '$white' : '$black'}
-              />
-            </Pressable>
-          ) : undefined,
+          headerRight: () => (
+            <HStack sx={{ gap: '$2', mr: '$2' }}>
+              {/* Botón de editar nombre */}
+              <Pressable
+                onPress={startEditingName}
+                sx={{
+                  p: '$2',
+                }}
+              >
+                <MaterialIcons
+                  name="edit"
+                  size={22}
+                  color={isDark ? '#FFFFFF' : '#000000'}
+                />
+              </Pressable>
+
+              {/* Botón de bloqueo */}
+              <Pressable
+                onPress={toggleListLock}
+                sx={{ p: '$2' }}
+              >
+                <MaterialIcons
+                  name={isLocked ? 'lock' : 'lock-open'}
+                  size={22}
+                  color={isLocked ? '#f59e0b' : (isDark ? '#FFFFFF' : '#000000')}
+                />
+              </Pressable>
+
+              {/* Botón de compartir */}
+              <Pressable
+                onPress={() => ClipboardService.shareList(listName, items)}
+                sx={{ p: '$2' }}
+              >
+                <MaterialIcons
+                  name="share"
+                  size={22}
+                  color={isDark ? '#FFFFFF' : '#000000'}
+                />
+              </Pressable>
+              
+              {/* Botón de refresh (solo para listas creadas desde tags) */}
+              {createdFromTags && (
+                <Pressable
+                  onPress={refreshListFromTags}
+                  disabled={isRefreshing}
+                  sx={{
+                    p: '$2',
+                    opacity: isRefreshing ? 0.5 : 1,
+                  }}
+                >
+                  <MaterialIcons
+                    name="refresh"
+                    size={22}
+                    color={isDark ? '#FFFFFF' : '#000000'}
+                  />
+                </Pressable>
+              )}
+            </HStack>
+          ),
         }} 
       />
+
+      {/* Modal de editar nombre */}
+      <Modal
+        visible={editingName}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelEditingName}
+      >
+        <KeyboardAvoidingView 
+          behavior="padding"
+          style={{ flex: 1 }}
+        >
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+            onPress={cancelEditingName}
+          >
+            <Pressable
+              style={{
+                width: '85%',
+                backgroundColor: theme.card,
+                borderRadius: 12,
+                padding: 20,
+              }}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text style={{ color: theme.text, fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>
+                Editar Nombre
+              </Text>
+              
+              <TextInput
+                value={tempName}
+                onChangeText={setTempName}
+                placeholder="Nombre de la lista"
+                placeholderTextColor="rgba(255,255,255,0.5)"
+                style={{
+                  backgroundColor: theme.background,
+                  color: theme.text,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 16,
+                  marginBottom: 20,
+                }}
+                autoFocus
+              />
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity
+                  onPress={cancelEditingName}
+                  style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(107, 114, 128, 0.2)',
+                    padding: 12,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: theme.text, fontWeight: '600' }}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={saveListName}
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#3b82f6',
+                    padding: 12,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>Guardar</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Box sx={{ flex: 1, bg: theme.background }}>
         <FlatList
@@ -864,7 +1089,7 @@ export default function ListDetailScreen() {
             alignItems: 'center',
           }}
         >
-          <Icon as={MaterialIcons} name="add" size="xl" color="$white" />
+          <MaterialIcons name="add" size={28} color="#FFFFFF" />
         </Pressable>
       </Box>
 
@@ -878,7 +1103,7 @@ export default function ListDetailScreen() {
         }}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior="padding"
           style={{ flex: 1 }}
         >
           <Animated.View
@@ -985,7 +1210,7 @@ export default function ListDetailScreen() {
                   Contenido completo
                 </Text>
                 <Pressable onPress={() => setShowViewModal(false)} sx={{ ml: '$2' }}>
-                  <Icon as={MaterialIcons} name="close" size="md" color={theme.text} />
+                  <MaterialIcons name="close" size={22} color={theme.text} />
                 </Pressable>
               </HStack>
               

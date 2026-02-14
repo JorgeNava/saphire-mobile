@@ -1,27 +1,28 @@
 // ChatScreen.tsx
+import { Ionicons } from '@expo/vector-icons';
 import {
-  Box,
-  HStack,
-  Icon,
-  Input,
-  InputField,
-  KeyboardAvoidingView,
-  Pressable,
-  Text,
+    Box,
+    HStack,
+    KeyboardAvoidingView,
+    Pressable,
+    Text
 } from '@gluestack-ui/themed';
 import { Buffer } from 'buffer';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  GestureResponderEvent,
-  LayoutAnimation,
-  ListRenderItem,
-  Platform,
-  TextInput,
-  useColorScheme,
+    Alert,
+    FlatList,
+    GestureResponderEvent,
+    LayoutAnimation,
+    ListRenderItem,
+    Platform,
+    ScrollView,
+    TextInput,
+    TouchableOpacity,
+    useColorScheme,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -52,6 +53,17 @@ const formatTime = (timestamp: number) => {
   return `${h}:${m}`;
 };
 
+const getDayLabel = (timestamp: number) => {
+  const d = new Date(timestamp);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Hoy';
+  if (diffDays === 1) return 'Ayer';
+  return d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -71,7 +83,9 @@ export default function ChatScreen() {
   ]);
   const [text, setText] = useState('');
   const [tags, setTags] = useState('');
+  const [selectedTagNames, setSelectedTagNames] = useState<string[]>([]);
   const [showTagsInput, setShowTagsInput] = useState(false);
+  const [tagSearch, setTagSearch] = useState('');
   const [sendingText, setSendingText] = useState(false);
   const [sendingAudio, setSendingAudio] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -79,15 +93,33 @@ export default function ChatScreen() {
   const audioPlaceholderId = useRef<string | null>(null);
   const flatListRef = useRef<FlatList<Message>>(null);
   
-  // Estados para autocompletado de etiquetas
+  // Estados para etiquetas (manejadas por TagSelector)
   const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
-  const [filteredTags, setFilteredTags] = useState<Array<{tagId: string; name: string}>>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Cargar mensajes iniciales
+  // Cargar mensajes y etiquetas iniciales
   useEffect(() => {
     loadMessages();
+    loadTags();
   }, []);
+
+  const loadTags = async () => {
+    try {
+      const cachedTags = await cacheService.getTags();
+      if (cachedTags && cachedTags.length > 0) {
+        setAvailableTags(cachedTags);
+      }
+      const res = await fetch(`${API_BASE}/tags?userId=user123&limit=1000`);
+      if (res.ok) {
+        const data = await res.json();
+        const tagsArray = Array.isArray(data) ? data : (data.items || []);
+        setAvailableTags(tagsArray);
+        await cacheService.setTags(tagsArray);
+        console.log('✅ Tags cargados:', tagsArray.length);
+      }
+    } catch (err) {
+      console.error('Error loading tags:', err);
+    }
+  };
 
   const loadMessages = async () => {
     try {
@@ -161,40 +193,28 @@ export default function ChatScreen() {
     };
   }, []);
 
-  // Cargar etiquetas disponibles
+  // Cargar etiquetas desde caché
   useEffect(() => {
-    loadAvailableTags();
+    loadCachedTags();
   }, []);
 
-  const loadAvailableTags = async () => {
+  const loadCachedTags = async () => {
     try {
-      // Intentar obtener del caché primero
       const cachedTags = await cacheService.getTags();
       if (cachedTags && Array.isArray(cachedTags)) {
         setAvailableTags(cachedTags);
         console.log('✅ Tags cargados desde caché:', cachedTags.length);
-        return;
-      }
-
-      // Si no hay caché, obtener del servidor
-      console.log('🔍 Cargando tags desde servidor...');
-      const res = await fetch(`${API_BASE}/tags?userId=user123`);
-      if (res.ok) {
-        const data = await res.json();
-        console.log('📥 Respuesta de tags:', data);
-        
-        // El backend puede retornar array directo o {items: []}
-        const tagsArray = Array.isArray(data) ? data : (data.items || []);
-        setAvailableTags(tagsArray);
-        
-        // Guardar en caché
-        await cacheService.setTags(tagsArray);
-        console.log('✅ Tags guardados en caché:', tagsArray.length);
       }
     } catch (err) {
-      console.error('❌ Error loading tags:', err);
-      setAvailableTags([]); // Fallback a array vacío
+      console.error('❌ Error loading cached tags:', err);
     }
+  };
+
+  // Callback cuando TagSelector carga las etiquetas
+  const handleTagsLoaded = async (loadedTags: Array<{tagId: string; name: string}>) => {
+    setAvailableTags(loadedTags);
+    await cacheService.setTags(loadedTags);
+    console.log('✅ Tags cargados y guardados en caché:', loadedTags.length);
   };
 
   // Iniciar sincronización en background de etiquetas
@@ -202,54 +222,44 @@ export default function ChatScreen() {
     cacheService.startTagsSync(async () => {
       const res = await fetch(`${API_BASE}/tags?userId=user123`);
       const data = await res.json();
-      // El backend puede retornar array directo o {items: []}
       const tagsArray = Array.isArray(data) ? data : (data.items || []);
-      setAvailableTags(tagsArray); // Actualizar estado con datos frescos
+      setAvailableTags(tagsArray);
       return tagsArray;
     });
 
-    // Limpiar al desmontar el componente
     return () => {
       cacheService.stopBackgroundSync('cache_tags');
     };
   }, []);
 
-  // Filtrar etiquetas basado en el input
-  React.useEffect(() => {
-    if (!tags.trim() || !showTagsInput) {
-      if (showSuggestions) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      }
-      setShowSuggestions(false);
-      return;
-    }
+  // Toggle de visibilidad del selector de etiquetas
+  const toggleTags = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowTagsInput(!showTagsInput);
+    if (showTagsInput) setTagSearch('');
+  };
 
-    const currentInput = tags.split(',').pop()?.trim().toLowerCase() || '';
-    
-    if (currentInput.length > 0) {
-      // Validar que availableTags sea un array antes de filtrar
-      if (Array.isArray(availableTags)) {
-        const filtered = availableTags.filter(tag => 
-          tag.name.toLowerCase().includes(currentInput)
-        );
-        setFilteredTags(filtered);
-        const shouldShow = filtered.length > 0;
-        if (shouldShow !== showSuggestions) {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        }
-        setShowSuggestions(shouldShow);
-      } else {
-        setShowSuggestions(false);
-        setFilteredTags([]);
-      }
-    } else {
-      if (showSuggestions) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      }
-      setShowSuggestions(false);
-      setFilteredTags([]);
-    }
-  }, [tags, showTagsInput, availableTags]);
+  const toggleTagSelection = (tagName: string) => {
+    setSelectedTagNames(prev => {
+      const next = prev.includes(tagName)
+        ? prev.filter(t => t !== tagName)
+        : [...prev, tagName];
+      setTags(next.join(', '));
+      return next;
+    });
+  };
+
+  const removeTag = (tagName: string) => {
+    setSelectedTagNames(prev => {
+      const next = prev.filter(t => t !== tagName);
+      setTags(next.join(', '));
+      return next;
+    });
+  };
+
+  const filteredAvailableTags = availableTags.filter(t =>
+    t.name.toLowerCase().includes(tagSearch.toLowerCase())
+  );
 
   const handleSend = async () => {
     if (!text.trim()) return;
@@ -271,6 +281,7 @@ export default function ChatScreen() {
     ]);
     setText('');
     setTags('');
+    setSelectedTagNames([]);
     setShowTagsInput(false);
     setSendingText(true);
     try {
@@ -420,6 +431,7 @@ export default function ChatScreen() {
       );
       // Limpiar tags después de enviar exitosamente
       setTags('');
+      setSelectedTagNames([]);
       setShowTagsInput(false);
     } catch (err) {
       console.error('Error al procesar audio:', err);
@@ -428,19 +440,6 @@ export default function ChatScreen() {
     }
   };
 
-  const toggleTags = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setShowTagsInput(!showTagsInput);
-  };
-
-  const selectTag = (tagName: string) => {
-    const currentTags = tags.split(',').map(t => t.trim()).filter(t => t);
-    // Remover el último tag incompleto y agregar el seleccionado
-    currentTags.pop();
-    currentTags.push(tagName);
-    setTags(currentTags.join(', ') + ', ');
-    setShowSuggestions(false);
-  };
 
   const handleMicPressIn = (e: GestureResponderEvent) => {
     if (!text.trim()) startRecording();
@@ -449,102 +448,131 @@ export default function ChatScreen() {
     if (!text.trim()) stopRecording();
   };
 
-  const renderItem: ListRenderItem<Message> = ({ item }) => (
-    <Box sx={{ mb: '$3', px: '$1' }}>
-      <HStack 
-        justifyContent={item.fromMe ? 'flex-end' : 'flex-start'}
-        alignItems="flex-end"
-        sx={{ gap: '$2' }}
-      >
-        {/* Avatar para mensajes de Zafira */}
-        {!item.fromMe && (
-          <Box 
-            sx={{ 
-              width: 32, 
-              height: 32, 
-              borderRadius: '$full', 
-              bg: '$purple500',
-              justifyContent: 'center',
-              alignItems: 'center',
-              mb: '$1'
-            }}
-          >
-            <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold' }}>Z</Text>
-          </Box>
+  const renderItem: ListRenderItem<Message> = ({ item, index }) => {
+    // Day separator logic (FlatList is inverted, so index 0 = newest)
+    const currentDay = item.sentAt ? getDayLabel(item.sentAt) : null;
+    const nextItem = messages[index + 1]; // older message (inverted)
+    const nextDay = nextItem?.sentAt ? getDayLabel(nextItem.sentAt) : null;
+    const showDaySeparator = currentDay && currentDay !== nextDay;
+
+    return (
+      <View style={{ paddingHorizontal: 4 }}>
+        {/* Day separator (rendered above this message in visual order since list is inverted) */}
+        {showDaySeparator && (
+          <View style={{ alignItems: 'center', marginVertical: 12 }}>
+            <View style={{
+              backgroundColor: isDark ? '#2A2F4A' : '#E5E7EB',
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 5,
+            }}>
+              <Text sx={{ color: '$white', fontSize: 12, fontWeight: '600' }}>
+                {currentDay}
+              </Text>
+            </View>
+          </View>
         )}
 
-        {/* Burbuja del mensaje */}
-        <Box
-          sx={{ 
-            px: '$4', 
-            py: '$3', 
-            bg: item.fromMe ? '$blue600' : theme.card,
-            borderRadius: '$2xl',
-            maxWidth: '75%',
-            shadowColor: '$black',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.1,
-            shadowRadius: 2,
-            elevation: 2,
-            ...(item.fromMe ? {
-              borderBottomRightRadius: '$sm'
-            } : {
-              borderBottomLeftRadius: '$sm',
-              borderWidth: 1,
-              borderColor: theme.border
-            })
-          }}
+        <HStack 
+          justifyContent={item.fromMe ? 'flex-end' : 'flex-start'}
+          alignItems="flex-end"
+          sx={{ gap: '$2', mb: '$2' }}
         >
-          <Text sx={{ 
-            color: item.fromMe ? '$white' : theme.text,
-            fontSize: '$md',
-            lineHeight: 20
-          }}>
-            {item.text}
-          </Text>
-        </Box>
+          {/* Avatar para mensajes de Zafira */}
+          {!item.fromMe && (
+            <Box 
+              sx={{ 
+                width: 32, 
+                height: 32, 
+                borderRadius: '$full', 
+                bg: '$purple500',
+                justifyContent: 'center',
+                alignItems: 'center',
+                mb: '$1'
+              }}
+            >
+              <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold' }}>Z</Text>
+            </Box>
+          )}
 
-        {/* Avatar para mensajes del usuario */}
-        {item.fromMe && (
-          <Box 
+          {/* Burbuja del mensaje con hora inline */}
+          <Box
             sx={{ 
-              width: 32, 
-              height: 32, 
-              borderRadius: '$full', 
-              bg: '$blue500',
-              justifyContent: 'center',
-              alignItems: 'center',
-              mb: '$1'
+              px: '$3', 
+              pt: '$2.5', 
+              pb: '$1.5', 
+              bg: item.fromMe ? '$blue600' : theme.card,
+              borderRadius: '$2xl',
+              maxWidth: '75%',
+              shadowColor: '$black',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.1,
+              shadowRadius: 2,
+              elevation: 2,
+              ...(item.fromMe ? {
+                borderBottomRightRadius: '$sm'
+              } : {
+                borderBottomLeftRadius: '$sm',
+                borderWidth: 1,
+                borderColor: theme.border
+              })
             }}
           >
-            <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold' }}>J</Text>
+            <Text sx={{ 
+              color: item.fromMe ? '$white' : theme.text,
+              fontSize: '$md',
+              lineHeight: 20
+            }}>
+              {item.text}
+            </Text>
+            {/* Hora inline abajo a la derecha */}
+            <HStack justifyContent="flex-end" sx={{ mt: '$1', gap: '$1' }}>
+              {item.fromMe && item.status === 'sending' && (
+                <Text sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 10 }}>🕒</Text>
+              )}
+              {item.fromMe && item.status === 'failed' && (
+                <Text sx={{ color: '$red300', fontSize: 10 }}>❌</Text>
+              )}
+              {item.sentAt && (
+                <Text sx={{ 
+                  color: item.fromMe ? 'rgba(255,255,255,0.55)' : (isDark ? '$gray500' : '$gray400'),
+                  fontSize: 10,
+                }}>
+                  {formatTime(item.sentAt)}
+                </Text>
+              )}
+              {item.fromMe && item.status === 'sent' && (
+                <Text sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 10 }}>✓</Text>
+              )}
+            </HStack>
           </Box>
-        )}
-      </HStack>
 
-      {/* Estado del mensaje */}
-      {item.fromMe && item.status && (
-        <HStack justifyContent="flex-end" sx={{ mt: '$1', mr: '$10' }}>
-          <Text sx={{ 
-            color: item.status === 'failed' ? '$red500' : isDark ? '$gray400' : '$gray500',
-            fontSize: '$xs'
-          }}>
-            {item.status === 'sending'
-              ? '🕒 Enviando...'
-              : item.status === 'failed'
-              ? '❌ Error al enviar'
-              : `✓ ${item.sentAt ? formatTime(item.sentAt) : ''}`}
-          </Text>
+          {/* Avatar para mensajes del usuario */}
+          {item.fromMe && (
+            <Box 
+              sx={{ 
+                width: 32, 
+                height: 32, 
+                borderRadius: '$full', 
+                bg: '$blue500',
+                justifyContent: 'center',
+                alignItems: 'center',
+                mb: '$1'
+              }}
+            >
+              <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold' }}>J</Text>
+            </Box>
+          )}
         </HStack>
-      )}
-    </Box>
-  );
+      </View>
+    );
+  };
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
       style={{ flex: 1 }}
-      keyboardVerticalOffset={0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <Box style={{ paddingTop: insets.top }} sx={{ flex: 1, bg: theme.background }}>
         {/* Header mejorado */}
@@ -577,7 +605,7 @@ export default function ChatScreen() {
               <Text sx={{ color: theme.text, fontSize: '$xl', fontWeight: 'bold' }}>
                 Zafira
               </Text>
-              <Text sx={{ color: isDark ? '$gray400' : '$gray500', fontSize: '$xs' }}>
+              <Text sx={{ color: '$white', fontSize: '$xs' }}>
                 Tu asistente inteligente
               </Text>
             </Box>
@@ -601,92 +629,135 @@ export default function ChatScreen() {
 
         {/* Sección de input */}
         <Box sx={{ px: '$3', pb: '$2', bg: theme.card, borderTopWidth: 1, borderTopColor: theme.border }}>
+
+          {/* Selected tags chips */}
+          {selectedTagNames.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginTop: 8, marginBottom: 4 }}
+              contentContainerStyle={{ gap: 6, paddingHorizontal: 2 }}
+            >
+              {selectedTagNames.map((tag) => (
+                <TouchableOpacity
+                  key={tag}
+                  onPress={() => removeTag(tag)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: '#3b82f6',
+                    borderRadius: 14,
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    gap: 4,
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{tag}</Text>
+                  <Ionicons name="close-circle" size={14} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Tag panel */}
           {showTagsInput && (
-            <Box sx={{ mb: '$3', mt: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderRadius: '$xl', borderWidth: 1, borderColor: theme.border, p: '$3' }}>
-            <HStack alignItems="center" justifyContent="space-between" sx={{ mb: '$2' }}>
-              <HStack alignItems="center" sx={{ gap: '$2' }}>
-                <Icon as={MaterialIcons} name="label" size="sm" color="$white" />
-                <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: '600' }}>
-                  Etiquetas
-                </Text>
-              </HStack>
-              <Pressable onPress={toggleTags}>
-                <Icon as={MaterialIcons} name="close" size="sm" color="$white" />
-              </Pressable>
-            </HStack>
-            <Input sx={{
-              bg: 'transparent',
-              borderRadius: '$md',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.3)'
-            }}>
-              <InputField
-                value={tags}
-                onChangeText={setTags}
-                placeholder="trabajo, urgente, reunión..."
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                sx={{ color: '$white', fontSize: '$sm' }}
-              />
-            </Input>
-            <Text sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '$xs', mt: '$2' }}>
-              Separa las etiquetas con comas
-            </Text>
-            {showSuggestions && (
-              <Box sx={{ mt: '$3', pt: '$3', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' }}>
-                <Text sx={{ color: '$white', fontSize: '$xs', fontWeight: '600', mb: '$2' }}>
-                  Sugerencias ({filteredTags.length}):
-                </Text>
-                <FlatList
-                  data={filteredTags}
-                  keyExtractor={tag => tag.tagId}
-                  renderItem={({ item: tag }) => (
-                    <Pressable
-                      onPress={() => selectTag(tag.name)}
-                      sx={{
-                        bg: '$blue500',
-                        px: '$3',
-                        py: '$1.5',
-                        borderRadius: '$full',
-                        mb: '$2',
-                        mr: '$2',
+            <View style={{ marginTop: 8, marginBottom: 4 }}>
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                marginBottom: 8,
+              }}>
+                <Ionicons name="search" size={16} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} />
+                <TextInput
+                  value={tagSearch}
+                  onChangeText={setTagSearch}
+                  placeholder="Buscar etiqueta..."
+                  placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                  style={{
+                    flex: 1,
+                    color: theme.text,
+                    fontSize: 13,
+                    paddingVertical: 8,
+                    paddingHorizontal: 8,
+                  }}
+                />
+                {tagSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setTagSearch('')}>
+                    <Ionicons name="close-circle" size={16} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 6, paddingHorizontal: 2, paddingBottom: 4 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {filteredAvailableTags.slice(0, 30).map((tag) => {
+                  const isSelected = selectedTagNames.includes(tag.name);
+                  return (
+                    <TouchableOpacity
+                      key={tag.tagId}
+                      onPress={() => toggleTagSelection(tag.name)}
+                      style={{
+                        backgroundColor: isSelected ? '#3b82f6' : (isDark ? '#2A2F4A' : '#E5E7EB'),
+                        borderRadius: 14,
+                        paddingHorizontal: 12,
+                        paddingVertical: 5,
+                        borderWidth: isSelected ? 0 : 1,
+                        borderColor: isDark ? '#3A3F5A' : '#D1D5DB',
                       }}
                     >
-                      <Text sx={{ color: '$white', fontSize: '$xs' }}>{tag.name}</Text>
-                    </Pressable>
-                  )}
-                  style={{ maxHeight: 150 }}
-                  showsVerticalScrollIndicator={true}
-                  keyboardShouldPersistTaps="handled"
-                  numColumns={3}
-                  columnWrapperStyle={{ gap: 8 }}
-                />
-              </Box>
-            )}
-            </Box>
+                      <Text style={{
+                        color: isSelected ? '#fff' : (isDark ? '#E5E7EB' : '#374151'),
+                        fontSize: 12,
+                        fontWeight: isSelected ? '600' : '400',
+                      }}>
+                        {tag.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
           )}
-          <Pressable 
-          onPress={toggleTags} 
-          sx={{ 
-            mt: showTagsInput ? '$0' : '$2',
-            mb: '$2',
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: '$2',
-            bg: showTagsInput ? 'transparent' : inputBg,
-            px: '$3',
-            py: '$2',
-            borderRadius: '$md',
-            borderWidth: 1,
-            borderColor: showTagsInput ? 'transparent' : inputBorder
-          }}
-        >
-          <Icon as={MaterialIcons} name="label-outline" size="sm" color={theme.text} />
-            <Text sx={{ color: theme.text, fontSize: '$sm' }}>
-              {showTagsInput ? 'Ocultar etiquetas' : 'Agregar etiquetas'}
-            </Text>
-          </Pressable>
 
-          <HStack alignItems="flex-end" sx={{ mt: '$3', gap: '$2' }}>
+          <HStack alignItems="flex-end" sx={{ mt: '$2', gap: '$2' }}>
+            {/* Tag toggle button */}
+            <Pressable
+              onPress={toggleTags}
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '$full',
+                justifyContent: 'center',
+                alignItems: 'center',
+                bg: showTagsInput ? '$blue600' : (isDark ? '#1E293B' : '#F1F5F9'),
+                borderWidth: showTagsInput ? 0 : 1,
+                borderColor: theme.border,
+              }}
+            >
+              <MaterialIcons name="label" size={20} color={showTagsInput ? '#FFFFFF' : theme.text} />
+              {selectedTagNames.length > 0 && (
+                <View style={{
+                  position: 'absolute',
+                  top: -2,
+                  right: -2,
+                  backgroundColor: '#ef4444',
+                  borderRadius: 8,
+                  width: 16,
+                  height: 16,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}>
+                  <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>{selectedTagNames.length}</Text>
+                </View>
+              )}
+            </Pressable>
+
             <Box
               flex={1}
               sx={{ 
@@ -735,7 +806,7 @@ export default function ChatScreen() {
                 transform: [{ scale: micPressed ? 1.15 : 1 }]
               }}
             >
-              <Icon as={MaterialIcons} name={text.trim() ? 'send' : 'mic'} size="md" color="$white" />
+              <MaterialIcons name={text.trim() ? 'send' : 'mic'} size={22} color="#FFFFFF" />
             </Pressable>
           </HStack>
         </Box>

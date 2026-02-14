@@ -1,22 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Modal,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    useColorScheme
 } from 'react-native';
 import { cacheService } from '../../services/cacheService';
+import { authenticateWithBiometrics } from '../../utils/biometricAuth';
+import { ClipboardService } from '../../utils/clipboard';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const NOTES_ENDPOINT = `${API_BASE}/notes`;
@@ -35,6 +37,7 @@ interface Note {
   updatedAt: string;
   createdBy: string;
   lastModifiedBy: string;
+  isLocked?: boolean;
   deletedAt?: string;
   deletedBy?: string;
 }
@@ -62,6 +65,7 @@ export default function NotesScreen() {
   const [lastKey, setLastKey] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showLimitSelector, setShowLimitSelector] = useState(false);
 
   // Modal de crear/editar
   const [showModal, setShowModal] = useState(false);
@@ -69,7 +73,37 @@ export default function NotesScreen() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalContent, setModalContent] = useState('');
   const [modalTags, setModalTags] = useState('');
+  const [modalIsLocked, setModalIsLocked] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Cargar preferencia de límite al montar
+  useEffect(() => {
+    loadLimitPreference();
+  }, []);
+
+  const loadLimitPreference = async () => {
+    try {
+      const savedLimit = await AsyncStorage.getItem('notes_limit_preference');
+      if (savedLimit) {
+        setLimit(savedLimit);
+      }
+    } catch (error) {
+      console.error('Error loading limit preference:', error);
+    }
+  };
+
+  const saveLimitPreference = async (newLimit: string) => {
+    try {
+      await AsyncStorage.setItem('notes_limit_preference', newLimit);
+      setLimit(newLimit);
+      setCurrentPage(1);
+      setLastKey(null);
+      setShowLimitSelector(false);
+      fetchNotes(true, null, true);
+    } catch (error) {
+      console.error('Error saving limit preference:', error);
+    }
+  };
 
   // Cargar notas
   const fetchNotes = async (resetPagination = false, customLastKey?: string | null, forceRefresh = false) => {
@@ -181,6 +215,7 @@ export default function NotesScreen() {
           title: modalTitle,
           content: modalContent,
           tags: modalTags.split(',').map(t => t.trim()).filter(t => t),
+          isLocked: modalIsLocked,
         }),
       });
 
@@ -240,11 +275,20 @@ export default function NotesScreen() {
     setModalTitle('');
     setModalContent('');
     setModalTags('');
+    setModalIsLocked(false);
     setShowModal(true);
   };
 
   // Navegar a página de edición
-  const openEditPage = (note: Note) => {
+  const openEditPage = async (note: Note) => {
+    if (note.isLocked) {
+      const authenticated = await authenticateWithBiometrics('Desbloquear nota');
+      if (!authenticated) {
+        Alert.alert('Acceso denegado', 'No se pudo verificar tu identidad biométrica.');
+        return;
+      }
+    }
+
     router.push(`/note/${note.noteId}` as any);
   };
 
@@ -255,6 +299,7 @@ export default function NotesScreen() {
     setModalTitle('');
     setModalContent('');
     setModalTags('');
+    setModalIsLocked(false);
   };
 
   // Paginación
@@ -290,6 +335,33 @@ export default function NotesScreen() {
     }, [])
   );
 
+  // Función para insertar bullet point
+  const insertBullet = () => {
+    setModalContent(prev => {
+      const lines = prev.split('\n');
+      const lastLine = lines[lines.length - 1];
+      
+      // Si la última línea está vacía, agregar bullet
+      if (!lastLine.trim()) {
+        lines[lines.length - 1] = '• ';
+        return lines.join('\n');
+      }
+      
+      // Si no, agregar nueva línea con bullet
+      return prev + '\n• ';
+    });
+  };
+
+  // Copiar nota al portapapeles
+  const copyNote = (note: Note) => {
+    ClipboardService.copyTitleAndContent(note.title, note.content);
+  };
+
+  // Copiar solo contenido
+  const copyNoteContent = (note: Note) => {
+    ClipboardService.copyContent(note.content);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Text style={[styles.title, { color: theme.text }]}>Notas</Text>
@@ -309,14 +381,48 @@ export default function NotesScreen() {
         />
       </View>
 
-      {/* Botón crear */}
-      <TouchableOpacity
-        onPress={openCreateModal}
-        style={styles.createButton}
-      >
-        <Ionicons name="add" size={24} color="#fff" />
-        <Text style={styles.createButtonText}>Nueva Nota</Text>
-      </TouchableOpacity>
+      {/* Controles */}
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+        <TouchableOpacity
+          onPress={openCreateModal}
+          style={[styles.createButton, { flex: 1 }]}
+        >
+          <Ionicons name="add" size={24} color="#fff" />
+          <Text style={styles.createButtonText}>Nueva Nota</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          onPress={() => setShowLimitSelector(!showLimitSelector)}
+          style={[styles.limitButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+        >
+          <Ionicons name="options-outline" size={20} color={theme.text} />
+          <Text style={[styles.limitButtonText, { color: theme.text }]}>{limit}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Selector de límite */}
+      {showLimitSelector && (
+        <View style={[styles.limitSelector, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.limitSelectorTitle, { color: theme.text }]}>Items por página:</Text>
+          <View style={styles.limitOptions}>
+            {['10', '20', '50', '100'].map(option => (
+              <TouchableOpacity
+                key={option}
+                onPress={() => saveLimitPreference(option)}
+                style={[
+                  styles.limitOption,
+                  { borderColor: theme.border },
+                  limit === option && { backgroundColor: '#3b82f6', borderColor: '#3b82f6' }
+                ]}
+              >
+                <Text style={{ color: limit === option ? '#fff' : theme.text, fontWeight: limit === option ? '600' : '400' }}>
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
 
       {/* Lista de notas */}
       <FlatList
@@ -349,16 +455,26 @@ export default function NotesScreen() {
               style={[styles.noteCard, { backgroundColor: theme.card, borderColor: theme.border }]}
             >
               <View style={styles.noteHeader}>
-                <Text style={[styles.noteTitle, { color: theme.text }]} numberOfLines={1}>
-                  {item.title}
-                </Text>
-                <TouchableOpacity onPress={() => deleteNote(item.noteId)}>
-                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                </TouchableOpacity>
+                <View style={styles.noteTitleRow}>
+                  <Text style={[styles.noteTitle, { color: theme.text }]} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  {item.isLocked && (
+                    <Ionicons name="lock-closed" size={16} color="#f59e0b" style={{ marginLeft: 6 }} />
+                  )}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity onPress={() => copyNote(item)}>
+                    <Ionicons name="copy-outline" size={20} color="#8b5cf6" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => deleteNote(item.noteId)}>
+                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <Text style={[styles.noteContent, { color: theme.text }]} numberOfLines={3}>
-                {item.content}
+                {item.isLocked ? '******' : item.content}
               </Text>
 
               {item.tagNames && item.tagNames.length > 0 && (
@@ -433,14 +549,23 @@ export default function NotesScreen() {
                 placeholderTextColor="rgba(255,255,255,0.5)"
               />
 
-              <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>Contenido:</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+                <Text style={[styles.modalLabel, { color: theme.text, marginBottom: 0 }]}>Contenido:</Text>
+                <TouchableOpacity
+                  onPress={insertBullet}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, padding: 8, borderRadius: 6, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}
+                >
+                  <Ionicons name="list" size={16} color="#3b82f6" />
+                  <Text style={{ color: '#3b82f6', fontSize: 12, fontWeight: '600' }}>Bullet</Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
                 value={modalContent}
                 onChangeText={setModalContent}
                 multiline
                 numberOfLines={6}
-                placeholder="Escribe el contenido de tu nota..."
-                style={[styles.modalTextArea, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                placeholder="Escribe el contenido de tu nota...\n\nUsa '•' para crear listas con viñetas"
+                style={[styles.modalTextArea, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border, marginTop: 8 }]}
                 placeholderTextColor="rgba(255,255,255,0.5)"
               />
 
@@ -455,6 +580,26 @@ export default function NotesScreen() {
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
                 Separa las etiquetas con comas
               </Text>
+
+              <TouchableOpacity
+                onPress={() => setModalIsLocked((prev) => !prev)}
+                style={[
+                  styles.lockToggle,
+                  {
+                    backgroundColor: modalIsLocked ? 'rgba(245, 158, 11, 0.16)' : theme.background,
+                    borderColor: modalIsLocked ? '#f59e0b' : theme.border,
+                  }
+                ]}
+              >
+                <Ionicons
+                  name={modalIsLocked ? 'lock-closed' : 'lock-open-outline'}
+                  size={18}
+                  color={modalIsLocked ? '#f59e0b' : theme.text}
+                />
+                <Text style={{ color: theme.text, fontSize: 13, fontWeight: '600' }}>
+                  {modalIsLocked ? 'Protegida con huella' : 'Proteger con huella'}
+                </Text>
+              </TouchableOpacity>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -533,10 +678,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  noteTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
   noteTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    flex: 1,
   },
   noteContent: {
     fontSize: 14,
@@ -605,6 +755,16 @@ const styles = StyleSheet.create({
   modalBody: {
     marginBottom: 20,
   },
+  lockToggle: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   modalLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -652,5 +812,42 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+  },
+  limitButton: {
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    height: 48,
+  },
+  limitButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  limitSelector: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  limitSelectorTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  limitOptions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  limitOption: {
+    flex: 1,
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 6,
+    alignItems: 'center',
   },
 });

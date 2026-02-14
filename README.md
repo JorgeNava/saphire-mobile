@@ -2,7 +2,7 @@
 
 Aplicación móvil desarrollada con **React Native** y **Expo** que funciona como tu asistente personal inteligente. Permite gestionar mensajes, pensamientos, notas y listas, todo integrado con IA y sincronizado con un backend serverless en AWS.
 
-> **Versión actual**: 1.5.1  
+> **Versión actual**: 1.6.0  
 > **Backend**: Saphire Backend v0.0.4
 
 ---
@@ -94,19 +94,24 @@ Y luego hacer el build con EAS.
 ### 💬 Chat
 - Envío de mensajes de texto y audio
 - Grabación de voz con visualización en tiempo real
-- Sistema de etiquetas con autocompletado
+- **Separadores por día** estilo WhatsApp (Hoy, Ayer, fecha)
+- **Hora dentro de burbuja** de cada mensaje
+- **Selector de etiquetas con chips** (toggle, búsqueda, horizontal scroll)
 - Historial de conversación con paginación
 - Integración con IA para clasificación automática
 
 ### 💭 Pensamientos
 - Lista de pensamientos con paginación bidireccional
 - **Modal de edición/eliminación** al hacer click
+- **Búsqueda por contenido** con filtrado instantáneo
 - Filtros avanzados:
   - Por etiquetas (con autocompletado)
   - Por fecha de creación
+  - Por contenido (texto libre)
 - Límite de resultados editable
 - Contador de total en BD
 - Caché inteligente (no guarda resultados filtrados)
+- Edición/eliminación local sin re-fetch (orden consistente)
 
 ### 📝 Notas
 - **CRUD completo**: Crear, editar, eliminar notas
@@ -123,6 +128,8 @@ Y luego hacer el build con EAS.
 - Gestión de listas con items
 - **Crear listas desde etiquetas**
 - **Botón de refresh** para listas creadas desde tags
+- **Bloqueo biométrico** con degradación graciosa
+- **Botón compartir** directo en detalle de lista
 - Agregar/eliminar items dinámicamente
 - Marcar items como completados
 - Sistema de etiquetas
@@ -244,7 +251,7 @@ DELETE /tags/{tagId}
 
 ## 📝 Roadmap
 
-### ✅ Completado (v1.5.0)
+### ✅ Completado (v1.6.0)
 - ✅ UI del Chat completamente rediseñada
 - ✅ Búsqueda de etiquetas con filtrado local
 - ✅ Eliminación múltiple de pensamientos
@@ -267,6 +274,12 @@ DELETE /tags/{tagId}
 - ✅ Búsqueda optimizada de tags con debouncing (v1.5.0)
 - ✅ Navegación a nota desde detalle de etiqueta (v1.5.0)
 - ✅ Agregar pensamiento a nota existente (v1.5.0)
+- ✅ Chat con separadores por día y hora en burbuja (v1.6.0)
+- ✅ Selector de etiquetas con chips en chat (v1.6.0)
+- ✅ Búsqueda por contenido en pensamientos (v1.6.0)
+- ✅ Bloqueo biométrico con degradación graciosa (v1.6.0)
+- ✅ Tab bar se oculta con teclado sin flicker (v1.6.0)
+- ✅ KeyboardAvoidingView unificado en toda la app (v1.6.0)
 
 ### 🚧 En Progreso
 - [ ] Adjuntar archivos a notas (imágenes, PDFs)

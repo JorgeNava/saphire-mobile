@@ -1,29 +1,28 @@
 // app/lists/index.tsx (or ListsScreen.tsx)
 import {
-  Box,
-  Button,
-  HStack,
-  Icon,
-  Input,
-  InputField,
-  Pressable,
-  Text,
-  VStack,
+    Box,
+    HStack,
+    Input,
+    InputField,
+    Pressable,
+    Text,
+    VStack
 } from '@gluestack-ui/themed';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  ListRenderItem,
-  Modal,
-  RefreshControl,
-  TextInput as RNTextInput,
-  StyleSheet,
-  useColorScheme,
+    Alert,
+    FlatList,
+    Modal,
+    RefreshControl,
+    TextInput as RNTextInput,
+    StyleSheet,
+    useColorScheme
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
+import { authenticateWithBiometrics } from '../../utils/biometricAuth';
+import { ClipboardService } from '../../utils/clipboard';
 
 // Interfaz actualizada para manejar tags del backend
 interface List {
@@ -37,6 +36,7 @@ interface List {
   createdAt?: string;
   updatedAt?: string;
   createdFromTags?: boolean; // Indica si la lista fue creada usando "Crear desde Etiquetas"
+  isLocked?: boolean;
 }
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
@@ -59,6 +59,7 @@ export default function ListsScreen() {
   const [newName, setNewName] = useState('');
   const [newTags, setNewTags] = useState('');
   const [newItems, setNewItems] = useState<string[]>(['']);
+  const [newListLocked, setNewListLocked] = useState(false);
 
   // Estados para crear lista desde etiquetas
   const [showTagPicker, setShowTagPicker] = useState(false);
@@ -70,6 +71,9 @@ export default function ListsScreen() {
   const [isCreatingFromTags, setIsCreatingFromTags] = useState(false);
   const [tagSearchQuery, setTagSearchQuery] = useState('');
   const [filteredTagsForModal, setFilteredTagsForModal] = useState<Array<{tagId: string; name: string}>>([]);
+  
+  // Estados para búsqueda
+  const [searchQuery, setSearchQuery] = useState('');
 
   const itemRefs = useRef<(RNTextInput | null)[]>([]);
 
@@ -103,6 +107,7 @@ export default function ListsScreen() {
         tagSource: l.tagSource,
         createdAt: l.createdAt,
         updatedAt: l.updatedAt,
+        isLocked: !!l.isLocked,
       }));
       
       setLists(parsed); // Actualizar estado con datos frescos
@@ -152,6 +157,7 @@ export default function ListsScreen() {
         tagSource: l.tagSource,
         createdAt: l.createdAt,
         updatedAt: l.updatedAt,
+        isLocked: !!l.isLocked,
       }));
       
       setLists(parsed);
@@ -171,13 +177,20 @@ export default function ListsScreen() {
     setNewName('');
     setNewTags('');
     setNewItems(['']);
+    setNewListLocked(false);
     itemRefs.current = [];
   };
 
   const createList = async () => {
     const tagsArray = newTags.split(',').map(t => t.trim()).filter(Boolean);
     const itemsArray = newItems.map(i => i.trim()).filter(Boolean);
-    const payload = { userId: 'user123', name: newName.trim(), tags: tagsArray, items: itemsArray };
+    const payload = {
+      userId: 'user123',
+      name: newName.trim(),
+      tags: tagsArray,
+      items: itemsArray,
+      isLocked: newListLocked,
+    };
     try {
       const res = await fetch(`${API_BASE}/lists`, {
         method: 'POST',
@@ -343,6 +356,19 @@ export default function ListsScreen() {
     setRefreshing(false);
   };
 
+  // Compartir lista
+  const shareList = (list: List) => {
+    ClipboardService.shareList(list.name, list.items);
+  };
+
+  // Filtrar listas por búsqueda
+  const filteredLists = searchQuery.trim()
+    ? lists.filter(list => 
+        list.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        list.tagNames.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : lists;
+
   // Renderizar item de lista con UI mejorada
   const renderListItem = ({ item }: { item: List }) => {
     const displayTags = item.tagNames?.slice(0, 3) || [];
@@ -353,7 +379,16 @@ export default function ListsScreen() {
 
     return (
       <Pressable 
-        onPress={() => router.push(`/list/${item.listId}`)}
+        onPress={async () => {
+          if (item.isLocked) {
+            const authenticated = await authenticateWithBiometrics('Desbloquear lista');
+            if (!authenticated) {
+              Alert.alert('Acceso denegado', 'No se pudo verificar tu identidad biométrica.');
+              return;
+            }
+          }
+          router.push(`/list/${item.listId}`);
+        }}
         sx={{ mb: '$3' }}
       >
         <Box
@@ -370,12 +405,20 @@ export default function ListsScreen() {
             elevation: 3
           }}
         >
-          {/* Header con título y botón eliminar */}
+          {/* Header con título y acciones */}
           <HStack justifyContent="space-between" alignItems="flex-start" sx={{ mb: '$3' }}>
             <VStack flex={1} sx={{ mr: '$2' }}>
               <Text sx={{ color: theme.text, fontSize: '$xl', fontWeight: 'bold', mb: '$1' }}>
                 {item.name}
               </Text>
+              {item.isLocked && (
+                <HStack alignItems="center" sx={{ gap: '$1', mb: '$1' }}>
+                  <MaterialIcons name="lock" size={14} color="#f59e0b" />
+                  <Text sx={{ color: '$yellow500', fontSize: '$xs', fontWeight: '600' }}>
+                    Protegida
+                  </Text>
+                </HStack>
+              )}
               
               {/* Estadísticas */}
               {itemCount > 0 && (
@@ -399,57 +442,79 @@ export default function ListsScreen() {
               )}
             </VStack>
 
-            <Pressable
-              onPress={(e) => {
-                e.stopPropagation();
-                Alert.alert('Confirmar', '¿Eliminar esta lista?', [
-                  { text: 'Cancelar', style: 'cancel' },
-                  {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        console.log('🗑️ Eliminando lista:', item.listId);
-                        
-                        const response = await fetch(`${API_BASE}/lists`, {
-                          method: 'DELETE',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ userId: 'user123', listId: item.listId }),
-                        });
+            {/* Botones de acción */}
+            <HStack sx={{ gap: '$2' }}>
+              {/* Botón compartir */}
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  shareList(item);
+                }}
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '$full',
+                  bg: 'rgba(139, 92, 246, 0.1)',
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
+              >
+                <MaterialIcons name="share" size={18} color="#8b5cf6" />
+              </Pressable>
+              
+              {/* Botón eliminar */}
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  Alert.alert('Confirmar', '¿Eliminar esta lista?', [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Eliminar',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          console.log('🗑️ Eliminando lista:', item.listId);
+                          
+                          const response = await fetch(`${API_BASE}/lists`, {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId: 'user123', listId: item.listId }),
+                          });
 
-                        if (!response.ok) {
-                          const errorText = await response.text();
-                          console.error('❌ Error al eliminar:', response.status, errorText);
-                          Alert.alert(
-                            'Error al eliminar',
-                            `No se pudo eliminar la lista.\nCódigo: ${response.status}`
-                          );
-                          return;
+                          if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('❌ Error al eliminar:', response.status, errorText);
+                            Alert.alert(
+                              'Error al eliminar',
+                              `No se pudo eliminar la lista.\nCódigo: ${response.status}`
+                            );
+                            return;
+                          }
+
+                          console.log('✅ Lista eliminada exitosamente:', item.listId);
+                          await cacheService.invalidateLists();
+                          setLists(prev => prev.filter(l => l.listId !== item.listId));
+                          Alert.alert('Éxito', `Lista "${item.name}" eliminada correctamente`);
+                        } catch (err: any) {
+                          console.error('❌ Error completo al eliminar lista:', err);
+                          Alert.alert('Error', `No se pudo eliminar la lista.\n\n${err.message || 'Error desconocido'}`);
                         }
-
-                        console.log('✅ Lista eliminada exitosamente:', item.listId);
-                        await cacheService.invalidateLists();
-                        setLists(prev => prev.filter(l => l.listId !== item.listId));
-                        Alert.alert('Éxito', `Lista "${item.name}" eliminada correctamente`);
-                      } catch (err: any) {
-                        console.error('❌ Error completo al eliminar lista:', err);
-                        Alert.alert('Error', `No se pudo eliminar la lista.\n\n${err.message || 'Error desconocido'}`);
-                      }
+                      },
                     },
-                  },
-                ]);
-              }}
-              sx={{
-                width: 36,
-                height: 36,
-                borderRadius: '$full',
-                bg: 'rgba(239, 68, 68, 0.1)',
-                justifyContent: 'center',
-                alignItems: 'center'
-              }}
-            >
-              <Icon as={MaterialIcons} name="delete" size="sm" color="$red500" />
-            </Pressable>
+                  ]);
+                }}
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '$full',
+                  bg: 'rgba(239, 68, 68, 0.1)',
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
+              >
+                <MaterialIcons name="delete" size={18} color="#ef4444" />
+              </Pressable>
+            </HStack>
           </HStack>
 
           {/* Barra de progreso */}
@@ -517,7 +582,7 @@ export default function ListsScreen() {
             <Text sx={{ color: '$blue500', fontSize: '$xs', fontWeight: '600' }}>
               Ver detalles
             </Text>
-            <Icon as={MaterialIcons} name="chevron-right" size="sm" color="$blue500" />
+            <MaterialIcons name="chevron-right" size={18} color="#3b82f6" />
           </HStack>
         </Box>
       </Pressable>
@@ -532,12 +597,29 @@ export default function ListsScreen() {
           Listas
         </Text>
         <Text sx={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
-          {lists.length} {lists.length === 1 ? 'lista' : 'listas'}
+          {filteredLists.length} {filteredLists.length === 1 ? 'lista' : 'listas'}
         </Text>
       </HStack>
 
+      {/* Buscador */}
+      <Input sx={{ mb: '$3', bg: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: theme.border, borderRadius: '$xl', alignItems: 'center' }}>
+        <MaterialIcons name="search" size={22} color={isDark ? '#94a3b8' : '#475569'} style={{ marginLeft: 12, alignSelf: 'center' }} />
+        <InputField
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Buscar listas o etiquetas..."
+          placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+          sx={{ color: theme.text, ml: '$2' }}
+        />
+        {searchQuery.length > 0 && (
+          <Pressable onPress={() => setSearchQuery('')} sx={{ mr: '$3' }}>
+            <MaterialIcons name="close" size={18} color={isDark ? '#94a3b8' : '#475569'} />
+          </Pressable>
+        )}
+      </Input>
+
       <FlatList
-        data={lists}
+        data={filteredLists}
         keyExtractor={l => l.listId}
         renderItem={renderListItem}
         contentContainerStyle={{ paddingBottom: 80 }}
@@ -548,6 +630,14 @@ export default function ListsScreen() {
             tintColor="#3b82f6"
             colors={['#3b82f6']}
           />
+        }
+        ListEmptyComponent={
+          <Box sx={{ alignItems: 'center', justifyContent: 'center', py: '$10' }}>
+            <MaterialIcons name="inbox" size={28} color={isDark ? '#475569' : '#9ca3af'} style={{ marginBottom: 12 }} />
+            <Text sx={{ color: theme.text, fontSize: '$lg', opacity: 0.6 }}>
+              {searchQuery ? 'No se encontraron listas' : 'No hay listas aún'}
+            </Text>
+          </Box>
         }
       />
 
@@ -591,8 +681,33 @@ export default function ListsScreen() {
               </Input>
             ))}
             <Pressable onPress={addItemField} sx={{ mb: '$4', flexDirection: 'row', alignItems: 'center', gap: '$2' }}>
-              <Icon as={MaterialIcons} name="add-circle" size="sm" color="$blue500" />
+              <MaterialIcons name="add-circle" size={18} color="#3b82f6" />
               <Text sx={{ color: '$blue500', fontSize: '$md', fontWeight: '600' }}>Añadir elemento</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setNewListLocked((prev) => !prev)}
+              sx={{
+                mb: '$4',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: '$2',
+                borderWidth: 1,
+                borderColor: newListLocked ? '$yellow500' : theme.border,
+                bg: newListLocked ? 'rgba(245,158,11,0.15)' : 'transparent',
+                borderRadius: '$md',
+                px: '$3',
+                py: '$2.5',
+              }}
+            >
+              <MaterialIcons
+                name={newListLocked ? 'lock' : 'lock-open'}
+                size={18}
+                color={newListLocked ? '#f59e0b' : theme.text}
+              />
+              <Text sx={{ color: theme.text, fontSize: '$sm', fontWeight: '600' }}>
+                {newListLocked ? 'Protegida con huella' : 'Proteger con huella'}
+              </Text>
             </Pressable>
 
             <HStack justifyContent="flex-end" sx={{ gap: '$3', mt: '$2' }}>
@@ -666,11 +781,10 @@ export default function ListsScreen() {
                       borderRadius: '$md',
                     }}
                   >
-                    <Icon
-                      as={MaterialIcons}
+                    <MaterialIcons
                       name={selectedTags.includes(tag.name) ? 'check-box' : 'check-box-outline-blank'}
-                      size="md"
-                      color="$white"
+                      size={22}
+                      color="#FFFFFF"
                     />
                     <Text sx={{ color: '$white', ml: '$2', fontSize: '$md' }}>
                       {tag.name}
@@ -795,7 +909,7 @@ export default function ListsScreen() {
               borderBottomColor: theme.border
             }}
           >
-            <Icon as={MaterialIcons} name="add" size="md" color="$green600" />
+            <MaterialIcons name="add" size={22} color="#16a34a" />
             <Text sx={{ color: theme.text, fontSize: '$md', fontWeight: '600' }}>Nueva Lista</Text>
           </Pressable>
           <Pressable
@@ -811,7 +925,7 @@ export default function ListsScreen() {
               py: '$3'
             }}
           >
-            <Icon as={MaterialIcons} name="label" size="md" color="$blue600" />
+            <MaterialIcons name="label" size={22} color="#2563eb" />
             <Text sx={{ color: theme.text, fontSize: '$md', fontWeight: '600' }}>Desde Etiquetas</Text>
           </Pressable>
         </Box>
@@ -839,7 +953,7 @@ export default function ListsScreen() {
           transform: [{ rotate: showActionMenu ? '45deg' : '0deg' }]
         }}
       >
-        <Icon as={MaterialIcons} name="add" size="xl" color="$white" />
+        <MaterialIcons name="add" size={28} color="#FFFFFF" />
       </Pressable>
     </Box>
   );

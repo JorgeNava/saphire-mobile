@@ -1,0 +1,27 @@
+Starting Metro Bundler
+Error: Unable to resolve module react-native-svg from /Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/@gluestack-style/react/src/AsForwarder.tsx: react-native-svg could not be found within the project or in these directories:
+  node_modules
+[0m [90m 1 |[39m [36mimport[39m [33mReact[39m [36mfrom[39m [32m'react'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 2 |[39m [36mimport[39m [33mSvg[39m [36mfrom[39m [32m'react-native-svg'[39m[33m;[39m
+ [90m   |[39m                  [31m[1m^[22m[39m
+ [90m 3 |[39m [36mimport[39m type { [33mRNProps[39m } [36mfrom[39m [32m'./types'[39m[33m;[39m
+ [90m 4 |[39m
+ [90m 5 |[39m [36mconst[39m [33mAsForwarderTemp[39m [33m=[39m ({[0m
+Error: Unable to resolve module react-native-svg from /Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/@gluestack-style/react/src/AsForwarder.tsx: react-native-svg could not be found within the project or in these directories:
+  node_modules
+[0m [90m 1 |[39m [36mimport[39m [33mReact[39m [36mfrom[39m [32m'react'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 2 |[39m [36mimport[39m [33mSvg[39m [36mfrom[39m [32m'react-native-svg'[39m[33m;[39m
+ [90m   |[39m                  [31m[1m^[22m[39m
+ [90m 3 |[39m [36mimport[39m type { [33mRNProps[39m } [36mfrom[39m [32m'./types'[39m[33m;[39m
+ [90m 4 |[39m
+ [90m 5 |[39m [36mconst[39m [33mAsForwarderTemp[39m [33m=[39m ({[0m
+    at ModuleResolver.resolveDependency (/Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/metro/src/node-haste/DependencyGraph/ModuleResolution.js:150:15)
+    at DependencyGraph.resolveDependency (/Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/metro/src/node-haste/DependencyGraph.js:248:43)
+    at /Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/metro/src/lib/transformHelpers.js:165:21
+    at resolveDependencies (/Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/metro/src/DeltaBundler/buildSubgraph.js:42:25)
+    at visit (/Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/metro/src/DeltaBundler/buildSubgraph.js:83:30)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Promise.all (index 9)
+    at visit (/Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/metro/src/DeltaBundler/buildSubgraph.js:92:5)
+    at async Promise.all (index 1)
+    at visit (/Users/jorge.nava/Personal/Repos/saphire-mobile/node_modules/metro/src/DeltaBundler/buildSubgraph.js:92:5)

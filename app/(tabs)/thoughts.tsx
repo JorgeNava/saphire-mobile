@@ -1,28 +1,27 @@
+import { TagSelector } from '@/components/tag-selector';
 import { InputType, Message } from '@/types/message';
+import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Ionicons } from '@expo/vector-icons';
-import { cacheService } from '../../services/cacheService';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Button,
-  FlatList,
-  LayoutAnimation,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  UIManager,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    LayoutAnimation,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    UIManager,
+    View,
+    useColorScheme
 } from 'react-native';
+import { cacheService } from '../../services/cacheService';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
 const THOUGHTS_ENDPOINT = `${API_BASE}/thoughts`;
@@ -44,14 +43,12 @@ export default function ThoughtsScreen() {
 
   const [usedAI, setUsedAI] = useState<boolean | null>(null);
   const [tags, setTags] = useState('');
+  const [contentSearch, setContentSearch] = useState('');
   const [inputType, setInputType] = useState<InputType>('text');
   const userId = 'user123';
 
-  // Estados para autocompletado de etiquetas
+  // Estados para etiquetas (manejadas por TagSelector)
   const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
-  const [filteredTags, setFilteredTags] = useState<Array<{tagId: string; name: string}>>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Estados para paginación
   const [limit, setLimit] = useState('50');
@@ -107,7 +104,7 @@ export default function ThoughtsScreen() {
   };
 
   // Helper para verificar si hay filtros activos
-  const checkActiveFilters = () => Boolean(tags.trim() || dateFrom);
+  const checkActiveFilters = () => Boolean(tags.trim() || dateFrom || contentSearch.trim());
 
   const showPicker = (field: string) => {
     setPickerVisible({ field, show: true });
@@ -170,7 +167,10 @@ export default function ThoughtsScreen() {
       }
 
       if (applyFilters) {
-        // Thoughts solo soporta: tagIds, tagSource, createdAt
+        if (contentSearch.trim()) {
+          params.append('searchTerm', contentSearch.trim());
+        }
+        // Thoughts solo soporta: tagIds, tagSource, createdAt, searchTerm
         if (tags.trim()) {
           // ✅ Convertir nombres de tags a tagIds para evitar falsos positivos
           const tagNamesArray = tags.split(',').map(t => t.trim()).filter(Boolean);
@@ -232,18 +232,16 @@ export default function ThoughtsScreen() {
       });
       
       // NUEVO: API ahora retorna objeto paginado con { items, count, hasMore, lastKey }
-      const thoughtsArray = data.items || [];
+      let thoughtsArray = (data.items || []).sort((a: any, b: any) =>
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
       
-      // Verificar si el filtrado funcionó
-      if (tags.trim() && thoughtsArray.length > 0) {
-        console.log('✅ Filtrado aplicado. Primeros 3 resultados:', 
-          thoughtsArray.slice(0, 3).map((t: any) => ({
-            content: t.content?.substring(0, 50),
-            tags: t.tagNames
-          }))
+      // Filtrado por contenido del lado del cliente (funciona incluso sin deploy del backend)
+      if (contentSearch.trim()) {
+        const searchLower = contentSearch.trim().toLowerCase();
+        thoughtsArray = thoughtsArray.filter((t: any) =>
+          (t.content || '').toLowerCase().includes(searchLower)
         );
-      } else if (tags.trim() && thoughtsArray.length === 0) {
-        console.warn('⚠️ Filtrado aplicado pero sin resultados. Posible problema del backend.');
       }
       
       setMessages(thoughtsArray);
@@ -358,7 +356,9 @@ export default function ThoughtsScreen() {
     cacheService.startThoughtsSync(async () => {
       const res = await fetch(`${THOUGHTS_ENDPOINT}?userId=${userId}&limit=50&sortOrder=desc`);
       const data = await res.json();
-      const thoughtsArray = data.items || [];
+      const thoughtsArray = (data.items || []).sort((a: any, b: any) =>
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
       setMessages(thoughtsArray); // Actualizar estado con datos frescos
       return thoughtsArray;
     });
@@ -368,55 +368,11 @@ export default function ThoughtsScreen() {
     };
   }, []);
 
-  // Filtrar etiquetas cuando el usuario escribe (con debouncing y búsqueda en backend)
-  useEffect(() => {
-    // Limpiar timeout anterior
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    if (!tags) {
-      setShowSuggestions(false);
-      setFilteredTags([]);
-      return;
-    }
-
-    const tagsList = tags.split(',').map(t => t.trim());
-    const lastTag = tagsList[tagsList.length - 1];
-
-    if (!lastTag || lastTag.length < 2) {
-      setShowSuggestions(false);
-      setFilteredTags([]);
-      return;
-    }
-
-    // Debouncing: esperar 300ms antes de buscar
-    const timeout = setTimeout(async () => {
-      try {
-        // Usar searchTerm en el backend para búsqueda optimizada
-        const res = await fetch(`${API_BASE}/tags?userId=${userId}&searchTerm=${encodeURIComponent(lastTag)}&limit=15`);
-        if (res.ok) {
-          const data = await res.json();
-          // El backend puede retornar un array directo o un objeto con items
-          const tagsArray = Array.isArray(data) ? data : (data.items || []);
-          setFilteredTags(tagsArray.slice(0, 15)); // Limitar a 15 sugerencias
-          setShowSuggestions(tagsArray.length > 0);
-        }
-      } catch (err) {
-        console.error('Error searching tags:', err);
-        setShowSuggestions(false);
-      }
-    }, 300);
-
-    searchTimeoutRef.current = timeout;
-
-    // Cleanup
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, [tags]);
+  // Callback cuando TagSelector carga las etiquetas
+  const handleTagsLoaded = (loadedTags: Array<{tagId: string; name: string}>) => {
+    setAvailableTags(loadedTags);
+    console.log('✅ Tags cargados:', loadedTags.length);
+  };
 
   // Cargar mensajes al montar el componente
   useEffect(() => {
@@ -490,21 +446,7 @@ export default function ThoughtsScreen() {
 
   const toggleTags = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    // Si se está cerrando, limpiar el input de etiquetas
-    if (showTagsInput) {
-      setTags('');
-      setShowSuggestions(false);
-    }
     setShowTagsInput(!showTagsInput);
-  };
-
-  const selectTag = (tagName: string) => {
-    const currentTags = tags.split(',').map(t => t.trim()).filter(t => t);
-    // Remover el último tag incompleto y agregar el seleccionado
-    currentTags.pop();
-    currentTags.push(tagName);
-    setTags(currentTags.join(', ') + ', ');
-    setShowSuggestions(false);
   };
 
   // Abrir modal de edición
@@ -530,21 +472,34 @@ export default function ThoughtsScreen() {
     setIsSaving(true);
     try {
       const thoughtId = selectedThought.thoughtId;
+      const tagArray = editTags.split(',').map(t => t.trim()).filter(t => t);
+      
+      console.log('📤 Actualizando pensamiento:', {
+        thoughtId,
+        content: editContent,
+        tags: tagArray
+      });
+      
       const response = await fetch(`${THOUGHTS_ENDPOINT}/${thoughtId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId: userId,
           content: editContent,
-          tagNames: editTags.split(',').map(t => t.trim()).filter(t => t),
+          tags: tagArray,
           tagSource: 'Manual',
         }),
       });
 
       if (response.ok) {
         console.log('✅ Pensamiento actualizado');
+        // Actualizar localmente sin re-fetch para mantener el orden
+        const updatedThought = await response.json();
+        setMessages(prev => prev.map(m =>
+          (m as any).thoughtId === thoughtId ? { ...m, ...updatedThought } : m
+        ));
+        await cacheService.set('cache_thoughts', null, 0);
         closeEditModal();
-        // Recargar pensamientos
-        fetchMessages(true, false, lastKey);
       } else {
         const error = await response.text();
         console.error('❌ Error al actualizar:', error);
@@ -580,9 +535,10 @@ export default function ThoughtsScreen() {
 
               if (response.ok) {
                 console.log('✅ Pensamiento eliminado');
+                // Eliminar localmente sin re-fetch para mantener el orden
+                setMessages(prev => prev.filter(m => (m as any).thoughtId !== thoughtId));
+                await cacheService.set('cache_thoughts', null, 0);
                 closeEditModal();
-                // Recargar pensamientos
-                fetchMessages(true, false, lastKey);
               } else {
                 const error = await response.text();
                 console.error('❌ Error al eliminar:', error);
@@ -946,69 +902,69 @@ export default function ThoughtsScreen() {
           </View>
         </View>
 
-        {/* Botón que se transforma en box de filtro de etiquetas */}
-        {!showTagsInput ? (
-          <TouchableOpacity 
-            onPress={toggleTags}
-            style={[styles.tagToggleButton, { backgroundColor: theme.card, borderColor: theme.border }]}
-          >
-            <Text style={{ color: theme.text, fontSize: 14 }}>
-              🏷️ Filtrar por etiquetas
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={[styles.tagFilterBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 20 }}>🏷️</Text>
-                <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>
-                  Etiquetas
-                </Text>
-              </View>
-              <TouchableOpacity onPress={toggleTags}>
-                <Text style={{ color: theme.text, fontSize: 20 }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <TextInput
-              placeholder="trabajo, urgente, reunión..."
-              value={tags}
-              onChangeText={setTags}
-              style={[styles.input, { color: theme.text, backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.3)' }]}
-              placeholderTextColor="rgba(255,255,255,0.5)"
-            />
-            
-            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
-              Separa las etiquetas con comas
-            </Text>
+        {/* Búsqueda por contenido */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: theme.card,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: theme.border,
+          paddingHorizontal: 12,
+          marginBottom: 12,
+        }}>
+          <Ionicons name="search" size={18} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} />
+          <TextInput
+            value={contentSearch}
+            onChangeText={setContentSearch}
+            placeholder="Buscar por contenido..."
+            placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+            style={{
+              flex: 1,
+              color: theme.text,
+              fontSize: 14,
+              paddingVertical: 10,
+              paddingHorizontal: 8,
+            }}
+            returnKeyType="search"
+            onSubmitEditing={() => {
+              setLastKey(null);
+              setCurrentPage(1);
+              fetchMessages(true, true);
+            }}
+          />
+          {contentSearch.length > 0 && (
+            <TouchableOpacity onPress={() => {
+              setContentSearch('');
+              setLastKey(null);
+              setCurrentPage(1);
+              // Fetch sin filtros para mostrar todos (contentSearch ya será '' en el próximo render)
+              fetchMessages(false, true);
+            }}>
+              <Ionicons name="close-circle" size={18} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} />
+            </TouchableOpacity>
+          )}
+        </View>
 
-            {/* Sugerencias con FlatList para mejor rendimiento */}
-            {showSuggestions && (
-              <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' }}>
-                <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', marginBottom: 8 }}>
-                  Sugerencias ({filteredTags.length}):
-                </Text>
-                <FlatList
-                  data={filteredTags}
-                  keyExtractor={(tag) => tag.tagId}
-                  renderItem={({ item: tag }) => (
-                    <TouchableOpacity
-                      onPress={() => selectTag(tag.name)}
-                      style={styles.tagChip}
-                    >
-                      <Text style={{ color: '#fff', fontSize: 12 }}>{tag.name}</Text>
-                    </TouchableOpacity>
-                  )}
-                  style={{ maxHeight: 150 }}
-                  showsVerticalScrollIndicator={true}
-                  keyboardShouldPersistTaps="handled"
-                  numColumns={3}
-                  columnWrapperStyle={{ gap: 8 }}
-                />
-              </View>
-            )}
-          </View>
-        )}
+        {/* Selector de etiquetas */}
+        <TagSelector
+          value={tags}
+          onChangeText={setTags}
+          mode="toggle"
+          userId={userId}
+          initiallyVisible={showTagsInput}
+          availableTags={availableTags}
+          onTagsLoaded={handleTagsLoaded}
+          toggleButtonText="Filtrar por etiquetas"
+          title="Etiquetas"
+          containerStyle={{ marginBottom: 12 }}
+          customTheme={{
+            card: theme.card,
+            text: theme.text,
+            border: theme.border,
+            primary: '#3b82f6'
+          }}
+        />
 
         {/* Botón aplicar filtros */}
         <TouchableOpacity 
@@ -1188,16 +1144,20 @@ export default function ThoughtsScreen() {
               />
 
               <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>Etiquetas:</Text>
-              <TextInput
+              <TagSelector
                 value={editTags}
                 onChangeText={setEditTags}
-                placeholder="trabajo, urgente, reunión..."
-                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                mode="inline"
+                userId={userId}
+                availableTags={availableTags}
+                containerStyle={{ marginBottom: 0 }}
+                customTheme={{
+                  card: theme.background,
+                  text: theme.text,
+                  border: theme.border,
+                  primary: '#3b82f6'
+                }}
               />
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
-                Separa las etiquetas con comas
-              </Text>
             </ScrollView>
 
             {/* Botones */}
@@ -1272,16 +1232,21 @@ export default function ThoughtsScreen() {
               <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>
                 Etiquetas adicionales (opcional):
               </Text>
-              <TextInput
+              <TagSelector
                 value={convertListTags}
                 onChangeText={setConvertListTags}
+                mode="inline"
+                userId={userId}
+                availableTags={availableTags}
                 placeholder="trabajo, importante..."
-                style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
-                placeholderTextColor="rgba(255,255,255,0.5)"
+                containerStyle={{ marginBottom: 0 }}
+                customTheme={{
+                  card: theme.background,
+                  text: theme.text,
+                  border: theme.border,
+                  primary: '#3b82f6'
+                }}
               />
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
-                Separa las etiquetas con comas
-              </Text>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1410,16 +1375,21 @@ export default function ThoughtsScreen() {
                   <Text style={[styles.modalLabel, { color: theme.text, marginTop: 16 }]}>
                     Etiquetas:
                   </Text>
-                  <TextInput
+                  <TagSelector
                     value={convertNoteTags}
                     onChangeText={setConvertNoteTags}
+                    mode="inline"
+                    userId={userId}
+                    availableTags={availableTags}
                     placeholder="trabajo, ideas..."
-                    style={[styles.modalInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
-                    placeholderTextColor="rgba(255,255,255,0.5)"
+                    containerStyle={{ marginBottom: 0 }}
+                    customTheme={{
+                      card: theme.background,
+                      text: theme.text,
+                      border: theme.border,
+                      primary: '#3b82f6'
+                    }}
                   />
-                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
-                    Separa las etiquetas con comas
-                  </Text>
                 </>
               )}
             </ScrollView>
