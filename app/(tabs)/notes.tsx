@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { cacheService } from '../../services/cacheService';
 import { networkService } from '../../services/networkService';
+import { offlineQueue } from '../../services/offlineQueue';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 import { ClipboardService } from '../../utils/clipboard';
 import { logger } from '../../utils/logger';
@@ -223,23 +224,58 @@ export default function NotesScreen() {
       return;
     }
 
+    const tagsArray = modalTags.split(',').map(t => t.trim()).filter(t => t);
+    const payload = {
+      userId,
+      title: modalTitle,
+      content: modalContent,
+      tags: tagsArray,
+      isLocked: modalIsLocked,
+    };
+
     setIsSaving(true);
     try {
-      const response = await fetch(NOTES_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Si no hay internet, crear localmente y encolar
+      if (!networkService.isConnected) {
+        const localNote: Note = {
+          noteId: `offline_${Date.now()}`,
           userId,
           title: modalTitle,
           content: modalContent,
-          tags: modalTags.split(',').map(t => t.trim()).filter(t => t),
+          attachmentKeys: [],
+          tagIds: [],
+          tagNames: tagsArray,
+          tagSource: 'Manual',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          createdBy: userId,
+          lastModifiedBy: userId,
           isLocked: modalIsLocked,
-        }),
+        };
+        setNotes(prev => [localNote, ...prev]);
+        // Actualizar caché
+        const cached = await cacheService.get('cache_notes') as Note[] | null;
+        await cacheService.set('cache_notes', [localNote, ...(cached || [])], 5 * 60 * 1000);
+        // Encolar
+        await offlineQueue.enqueue({
+          url: NOTES_ENDPOINT,
+          method: 'POST',
+          body: payload,
+          headers: { 'Content-Type': 'application/json' },
+          description: `Crear nota: "${modalTitle.substring(0, 30)}"`,
+        });
+        closeModal();
+        return;
+      }
+
+      const response = await fetch(NOTES_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
         logger.log('✅ Nota creada');
-        // Invalidar caché para forzar recarga
         await cacheService.set('cache_notes', null, 0);
         closeModal();
         fetchNotes(true);
@@ -267,19 +303,37 @@ export default function NotesScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Optimistic: eliminar de la UI y caché inmediatamente
+              setNotes(prev => prev.filter(n => n.noteId !== noteId));
+              const cached = await cacheService.get('cache_notes') as Note[] | null;
+              if (cached) {
+                await cacheService.set('cache_notes', cached.filter(n => n.noteId !== noteId), 5 * 60 * 1000);
+              }
+
+              if (!networkService.isConnected) {
+                await offlineQueue.enqueue({
+                  url: `${NOTES_ENDPOINT}/${noteId}?userId=${userId}`,
+                  method: 'DELETE',
+                  headers: {},
+                  description: `Eliminar nota: ${noteId}`,
+                });
+                return;
+              }
+
               const response = await fetch(`${NOTES_ENDPOINT}/${noteId}?userId=${userId}`, {
                 method: 'DELETE',
               });
 
               if (response.ok) {
                 logger.log('✅ Nota eliminada');
-                fetchNotes(false, lastKey);
               } else {
                 throw new Error('Error al eliminar');
               }
             } catch (err) {
               console.error('❌ Error:', err);
               Alert.alert('Error', 'No se pudo eliminar la nota');
+              // Recargar notas para revertir
+              fetchNotes(true);
             }
           },
         },

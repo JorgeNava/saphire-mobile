@@ -22,6 +22,7 @@ import {
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
 import { networkService } from '../../services/networkService';
+import { offlineQueue } from '../../services/offlineQueue';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 import { ClipboardService } from '../../utils/clipboard';
 import { logger } from '../../utils/logger';
@@ -204,13 +205,39 @@ export default function ListsScreen() {
       isLocked: newListLocked,
     };
     try {
+      // Si no hay internet, crear localmente y encolar
+      if (!networkService.isConnected) {
+        const localList: List = {
+          listId: `offline_${Date.now()}`,
+          name: newName.trim(),
+          tagIds: [],
+          tagNames: tagsArray,
+          items: itemsArray,
+          tagSource: 'Manual',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isLocked: newListLocked,
+        };
+        setLists(prev => [localList, ...prev]);
+        const cached = await cacheService.getLists();
+        await cacheService.setLists([localList, ...(cached || [])]);
+        await offlineQueue.enqueue({
+          url: `${API_BASE}/lists`,
+          method: 'POST',
+          body: payload,
+          headers: { 'Content-Type': 'application/json' },
+          description: `Crear lista: "${newName.trim().substring(0, 30)}"`,
+        });
+        closeModal();
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/lists`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
-      // Tras crear, recargamos todas las listas
       closeModal();
       await fetchLists();
     } catch {
@@ -490,6 +517,24 @@ export default function ListsScreen() {
                         try {
                           logger.log('🗑️ Eliminando lista:', item.listId);
                           
+                          // Optimistic: eliminar de UI y caché
+                          setLists(prev => prev.filter(l => l.listId !== item.listId));
+                          const cached = await cacheService.getLists();
+                          if (cached) {
+                            await cacheService.setLists(cached.filter(l => l.listId !== item.listId));
+                          }
+
+                          if (!networkService.isConnected) {
+                            await offlineQueue.enqueue({
+                              url: `${API_BASE}/lists`,
+                              method: 'DELETE',
+                              body: { userId: 'user123', listId: item.listId },
+                              headers: { 'Content-Type': 'application/json' },
+                              description: `Eliminar lista: "${item.name.substring(0, 30)}"`,
+                            });
+                            return;
+                          }
+
                           const response = await fetch(`${API_BASE}/lists`, {
                             method: 'DELETE',
                             headers: { 'Content-Type': 'application/json' },
@@ -503,16 +548,17 @@ export default function ListsScreen() {
                               'Error al eliminar',
                               `No se pudo eliminar la lista.\nCódigo: ${response.status}`
                             );
+                            // Revertir
+                            fetchLists(true);
                             return;
                           }
 
                           logger.log('✅ Lista eliminada exitosamente:', item.listId);
                           await cacheService.invalidateLists();
-                          setLists(prev => prev.filter(l => l.listId !== item.listId));
-                          Alert.alert('Éxito', `Lista "${item.name}" eliminada correctamente`);
                         } catch (err: any) {
                           console.error('❌ Error completo al eliminar lista:', err);
                           Alert.alert('Error', `No se pudo eliminar la lista.\n\n${err.message || 'Error desconocido'}`);
+                          fetchLists(true);
                         }
                       },
                     },

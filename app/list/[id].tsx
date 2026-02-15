@@ -24,6 +24,8 @@ import {
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { cacheService } from '../../services/cacheService';
+import { networkService } from '../../services/networkService';
+import { offlineQueue } from '../../services/offlineQueue';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 import { ClipboardService } from '../../utils/clipboard';
 
@@ -79,21 +81,53 @@ export default function ListDetailScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
 
+  // Helper para cargar datos de lista desde caché
+  const loadListFromCache = async () => {
+    const cachedLists = await cacheService.getLists();
+    if (cachedLists) {
+      const lst = cachedLists.find((l: any) => l.listId === listId || l.id === listId);
+      if (lst) return lst;
+    }
+    return null;
+  };
+
+  // Helper para guardar lista actualizada en caché
+  const updateListInCache = async (updatedList: any) => {
+    const cachedLists = await cacheService.getLists();
+    if (cachedLists) {
+      const updated = cachedLists.map((l: any) =>
+        (l.listId === listId || l.id === listId) ? { ...l, ...updatedList } : l
+      );
+      await cacheService.setLists(updated);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
-        const url = `${API_BASE}/lists?userId=user123`;
-        const res = await fetch(url);
-        
-        if (!res.ok) {
-          const errorText = await res.text();
-          console.error('❌ Error response:', errorText);
-          throw new Error(`HTTP ${res.status}: ${errorText}`);
+        let lst: any = null;
+
+        // Si no hay internet, cargar desde caché
+        if (!networkService.isConnected) {
+          lst = await loadListFromCache();
+          if (!lst) {
+            Alert.alert('Sin conexión', 'No se pudo cargar la lista sin internet');
+            return router.back();
+          }
+        } else {
+          const url = `${API_BASE}/lists?userId=user123`;
+          const res = await fetch(url);
+          
+          if (!res.ok) {
+            const errorText = await res.text();
+            console.error('❌ Error response:', errorText);
+            throw new Error(`HTTP ${res.status}: ${errorText}`);
+          }
+          
+          const data = await res.json();
+          const listsArray = Array.isArray(data) ? data : (data.lists || []);
+          lst = listsArray.find((l: any) => l.listId === listId || l.id === listId);
         }
-        
-        const data = await res.json();
-        const listsArray = Array.isArray(data) ? data : (data.lists || []);
-        const lst = listsArray.find((l: any) => l.listId === listId || l.id === listId);
         
         if (!lst) {
           Alert.alert('Error', 'Lista no encontrada');
@@ -121,7 +155,25 @@ export default function ListDetailScreen() {
         loadAvailableTags();
       } catch (err) {
         console.error('❌ Error loading list:', err);
-        Alert.alert('Error', 'No se pudo cargar la lista');
+        // Fallback a caché
+        const cached = await loadListFromCache();
+        if (cached) {
+          const normalizedItems = (cached.items || []).map((item: any) => 
+            typeof item === 'string' 
+              ? { content: item, completed: false } 
+              : { itemId: item.itemId, content: item.content, completed: item.completed || false, order: item.order }
+          );
+          setItems(normalizedItems);
+          setTagIds(cached.tagIds || []);
+          setTagNames(cached.tagNames || cached.tags || []);
+          setListName(cached.name || '');
+          setCreatedFromTags(cached.createdFromTags || false);
+          setIsLocked(!!cached.isLocked);
+          setFullListData(cached);
+          loadAvailableTags();
+        } else {
+          Alert.alert('Error', 'No se pudo cargar la lista');
+        }
       }
     })();
   }, [listId]);
@@ -172,34 +224,47 @@ export default function ListDetailScreen() {
     }
 
     console.log('➕ Adding item to list:', { listId, newItem: newItem.trim() });
+    const trimmedItem = newItem.trim();
 
     try {
+      // Optimistic: agregar localmente
+      const localItem = { content: trimmedItem, completed: false };
+      setItems(prev => [...prev, localItem]);
+      setNewItem('');
+      setShowItemInput(false);
+
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+
+      // Actualizar caché
+      await updateListInCache({ items: [...items, localItem], updatedAt: new Date().toISOString() });
+
+      if (!networkService.isConnected) {
+        await offlineQueue.enqueue({
+          url: `${API_BASE}/lists/items`,
+          method: 'PATCH',
+          body: { userId: 'user123', listId, newItem: trimmedItem },
+          headers: { 'Content-Type': 'application/json' },
+          description: `Agregar item a lista: "${trimmedItem.substring(0, 30)}"`,
+        });
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/lists/items`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: 'user123', listId, newItem: newItem.trim() }),
+        body: JSON.stringify({ userId: 'user123', listId, newItem: trimmedItem }),
       });
-
-      console.log('📥 Response status:', res.status);
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        console.error('❌ Error response:', errorData);
         throw new Error(errorData.message || errorData.error || 'Error al agregar elemento');
       }
 
       const data = await res.json();
-      console.log('✅ Item added successfully:', data);
-      
       const { items: updated } = data;
       setItems(updated);
-      setNewItem('');
-      setShowItemInput(false);
-      
-      // Scroll al final para ver el nuevo elemento
-      setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: true });
-      }, 100);
     } catch (err) {
       console.error('❌ Error adding item:', err);
       const errorMessage = err instanceof Error ? err.message : 'No se pudo agregar el elemento';
@@ -211,23 +276,37 @@ export default function ListDetailScreen() {
     console.log('🗑️ Eliminando item:', { listId, item: itemToDelete });
     
     try {
+      // Optimistic: eliminar localmente
+      const updatedItems = items.filter((i: any) => {
+        const content = typeof i === 'string' ? i : i.content;
+        return content !== itemToDelete;
+      });
+      setItems(updatedItems);
+      await updateListInCache({ items: updatedItems, updatedAt: new Date().toISOString() });
+
+      if (!networkService.isConnected) {
+        await offlineQueue.enqueue({
+          url: `${API_BASE}/lists/items`,
+          method: 'DELETE',
+          body: { userId: 'user123', listId, item: itemToDelete },
+          headers: { 'Content-Type': 'application/json' },
+          description: `Eliminar item de lista: "${itemToDelete.substring(0, 30)}"`,
+        });
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/lists/items`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: 'user123', listId, item: itemToDelete }),
       });
 
-      console.log('📥 Response status:', res.status);
-
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        console.error('❌ Error response:', errorData);
         throw new Error(errorData.message || errorData.error || 'Error al eliminar elemento');
       }
 
       const data = await res.json();
-      console.log('✅ Item eliminado:', data);
-      
       const { items: updated } = data;
       setItems(updated);
     } catch (err) {
@@ -251,9 +330,33 @@ export default function ListDetailScreen() {
     updatedItems[index] = updatedItem;
     setItems(updatedItems);
     
-    // Actualizar en el servidor usando el endpoint específico
+    // Actualizar caché
+    await updateListInCache({ items: updatedItems, updatedAt: new Date().toISOString() });
+
+    if (!networkService.isConnected) {
+      // Encolar la operación apropiada
+      if (itemObj.itemId) {
+        await offlineQueue.enqueue({
+          url: `${API_BASE}/lists/${listId}/items/${itemObj.itemId}`,
+          method: 'PUT',
+          body: { userId: 'user123', completed: newCompletedState },
+          headers: { 'Content-Type': 'application/json' },
+          description: `Toggle item: "${itemObj.content.substring(0, 30)}"`,
+        });
+      } else {
+        await offlineQueue.enqueue({
+          url: `${API_BASE}/lists/${listId}`,
+          method: 'PUT',
+          body: { ...fullListData, items: updatedItems, updatedAt: new Date().toISOString(), lastModifiedBy: 'user123' },
+          headers: { 'Content-Type': 'application/json' },
+          description: `Actualizar items de lista`,
+        });
+      }
+      return;
+    }
+
+    // Actualizar en el servidor
     try {
-      // Si el item tiene itemId, usar el endpoint específico (más eficiente)
       if (itemObj.itemId) {
         const res = await fetch(`${API_BASE}/lists/${listId}/items/${itemObj.itemId}`, {
           method: 'PUT',
@@ -267,21 +370,15 @@ export default function ListDetailScreen() {
         if (!res.ok) throw new Error('Failed to update item');
         
         const updatedList = await res.json();
-        // Actualizar con la respuesta del servidor
         setItems(updatedList.items || []);
         setFullListData(updatedList);
-        console.log('✅ Item actualizado con endpoint específico');
       } else {
-        // Fallback: actualizar toda la lista si no hay itemId
         await updateListItems(updatedItems);
-        console.log('✅ Item actualizado con endpoint de lista completa');
       }
       
-      // Invalidar caché de listas
       await cacheService.set('cache_lists', null, 0);
     } catch (err) {
       console.error('❌ Error updating item:', err);
-      // Revertir cambio si falla
       setItems(items);
       Alert.alert('Error', 'No se pudo actualizar el elemento');
     }
@@ -315,7 +412,21 @@ export default function ListDetailScreen() {
     setEditingItem(null);
     setEditContent('');
     
-    // Actualizar en el servidor
+    // Actualizar caché
+    await updateListInCache({ items: updatedItems, updatedAt: new Date().toISOString() });
+
+    if (!networkService.isConnected) {
+      const { isLocked: _lock, ...listDataWithoutLock } = fullListData || {};
+      await offlineQueue.enqueue({
+        url: `${API_BASE}/lists/${listId}`,
+        method: 'PUT',
+        body: { ...listDataWithoutLock, items: updatedItems, updatedAt: new Date().toISOString(), lastModifiedBy: 'user123' },
+        headers: { 'Content-Type': 'application/json' },
+        description: `Editar item en lista`,
+      });
+      return;
+    }
+
     try {
       await updateListItems(updatedItems);
     } catch (err) {
@@ -826,21 +937,35 @@ export default function ListDetailScreen() {
       return;
     }
 
+    const newName = tempName.trim();
+    // Optimistic
+    setListName(newName);
+    setEditingName(false);
+    await updateListInCache({ name: newName, updatedAt: new Date().toISOString() });
+
+    if (!networkService.isConnected) {
+      await offlineQueue.enqueue({
+        url: `${API_BASE}/lists/${listId}`,
+        method: 'PUT',
+        body: { userId: 'user123', name: newName },
+        headers: { 'Content-Type': 'application/json' },
+        description: `Renombrar lista: "${newName.substring(0, 30)}"`,
+      });
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE}/lists/${listId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: 'user123',
-          name: tempName.trim(),
+          name: newName,
         }),
       });
 
       if (response.ok) {
-        setListName(tempName.trim());
-        setEditingName(false);
         await cacheService.invalidateLists();
-        Alert.alert('Éxito', 'Nombre actualizado');
       } else {
         Alert.alert('Error', 'No se pudo actualizar el nombre');
       }
@@ -869,23 +994,36 @@ export default function ListDetailScreen() {
       }
     }
 
+    // Optimistic
+    setIsLocked(nextLockedState);
+    setFullListData((prev: any) => (prev ? { ...prev, isLocked: nextLockedState } : prev));
+    await updateListInCache({ isLocked: nextLockedState, updatedAt: new Date().toISOString() });
+
+    const { isLocked: _prevLock, listId: _id, createdAt: _ca, ...restData } = fullListData || {};
+    const payload = {
+      ...restData,
+      userId: 'user123',
+      name: listName || fullListData?.name || 'Lista',
+      items: items.map((item: any) => 
+        typeof item === 'string' 
+          ? { content: item } 
+          : { itemId: item.itemId, content: item.content, completed: item.completed, order: item.order }
+      ),
+      isLocked: nextLockedState,
+    };
+
+    if (!networkService.isConnected) {
+      await offlineQueue.enqueue({
+        url: `${API_BASE}/lists/${listId}`,
+        method: 'PUT',
+        body: payload,
+        headers: { 'Content-Type': 'application/json' },
+        description: `Toggle lock lista: ${nextLockedState ? 'bloquear' : 'desbloquear'}`,
+      });
+      return;
+    }
+
     try {
-      // Enviar datos completos de la lista con isLocked cambiado
-      const { isLocked: _prevLock, listId: _id, createdAt: _ca, ...restData } = fullListData || {};
-      const payload = {
-        ...restData,
-        userId: 'user123',
-        name: listName || fullListData?.name || 'Lista',
-        items: items.map((item: any) => 
-          typeof item === 'string' 
-            ? { content: item } 
-            : { itemId: item.itemId, content: item.content, completed: item.completed, order: item.order }
-        ),
-        isLocked: nextLockedState,
-      };
-      
-      console.log('🔒 Toggle lock payload:', JSON.stringify(payload).substring(0, 200));
-      
       const response = await fetch(`${API_BASE}/lists/${listId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -895,11 +1033,11 @@ export default function ListDetailScreen() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Lock update error:', response.status, errorText);
+        // Revertir
+        setIsLocked(!nextLockedState);
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      setIsLocked(nextLockedState);
-      setFullListData((prev: any) => (prev ? { ...prev, isLocked: nextLockedState } : prev));
       await cacheService.invalidateLists();
     } catch (err: any) {
       console.error('❌ Error toggling list lock:', err);

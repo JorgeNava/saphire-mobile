@@ -15,6 +15,8 @@ import {
     useColorScheme,
 } from 'react-native';
 import { cacheService } from '../../services/cacheService';
+import { networkService } from '../../services/networkService';
+import { offlineQueue } from '../../services/offlineQueue';
 import { authenticateWithBiometrics } from '../../utils/biometricAuth';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
@@ -114,6 +116,28 @@ export default function NoteDetailScreen() {
     
     setLoading(true);
     try {
+      // Si no hay internet, buscar en caché
+      if (!networkService.isConnected) {
+        const cachedNotes = await cacheService.get('cache_notes') as Note[] | null;
+        if (cachedNotes) {
+          const cached = cachedNotes.find(n => n.noteId === id);
+          if (cached) {
+            setNote(cached);
+            setTitle(cached.title);
+            setContent(cached.content);
+            const tagsArray = cached.tagNames || [];
+            setTags(tagsArray.join(', '));
+            setTagArray(tagsArray);
+            setIsLocked(!!cached.isLocked);
+            setLoading(false);
+            return;
+          }
+        }
+        Alert.alert('Sin conexión', 'No se pudo cargar la nota sin internet');
+        router.back();
+        return;
+      }
+
       const response = await fetch(`${NOTES_ENDPOINT}/${id}?userId=${userId}`);
       if (!response.ok) {
         throw new Error('No se pudo cargar la nota');
@@ -129,7 +153,7 @@ export default function NoteDetailScreen() {
       setTagArray(tagsArray);
       setIsLocked(!!data.isLocked);
     } catch (err) {
-      console.error('❌ Error:', err);
+      console.error('\u274c Error:', err);
       Alert.alert('Error', 'No se pudo cargar la nota');
       router.back();
     } finally {
@@ -155,19 +179,42 @@ export default function NoteDetailScreen() {
   // Auto-guardar al salir
   useEffect(() => {
     return () => {
-      // Cleanup: guardar automáticamente si hay cambios
       if (hasUnsavedChanges && note && title.trim() && content.trim()) {
-        // Guardar sin mostrar alert
+        const payload = {
+          userId,
+          title: title.trim(),
+          content: content.trim(),
+          tagNames: tagArray,
+          tagSource: 'Manual',
+        };
+
+        // Actualizar caché local siempre
+        cacheService.get('cache_notes').then((cachedNotes: any) => {
+          if (cachedNotes && Array.isArray(cachedNotes)) {
+            const updated = cachedNotes.map((n: Note) =>
+              n.noteId === note.noteId
+                ? { ...n, title: title.trim(), content: content.trim(), tagNames: tagArray, updatedAt: new Date().toISOString() }
+                : n
+            );
+            cacheService.set('cache_notes', updated, 5 * 60 * 1000);
+          }
+        });
+
+        if (!networkService.isConnected) {
+          offlineQueue.enqueue({
+            url: `${NOTES_ENDPOINT}/${note.noteId}`,
+            method: 'PUT',
+            body: payload,
+            headers: { 'Content-Type': 'application/json' },
+            description: `Auto-guardar nota: "${title.trim().substring(0, 30)}"`,
+          });
+          return;
+        }
+
         fetch(`${NOTES_ENDPOINT}/${note.noteId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            title: title.trim(),
-            content: content.trim(),
-            tagNames: tagArray,
-            tagSource: 'Manual',
-          }),
+          body: JSON.stringify(payload),
         })
         .then(response => {
           if (response.ok) {
@@ -202,23 +249,50 @@ export default function NoteDetailScreen() {
       return;
     }
 
+    const payload = {
+      userId,
+      title: title.trim(),
+      content: content.trim(),
+      tagNames: tagArray,
+      tagSource: 'Manual',
+    };
+
     setSaving(true);
     try {
+      // Actualizar caché local siempre
+      const cachedNotes = await cacheService.get('cache_notes') as Note[] | null;
+      if (cachedNotes) {
+        const updated = cachedNotes.map(n =>
+          n.noteId === note.noteId
+            ? { ...n, title: title.trim(), content: content.trim(), tagNames: tagArray, updatedAt: new Date().toISOString() }
+            : n
+        );
+        await cacheService.set('cache_notes', updated, 5 * 60 * 1000);
+      }
+
+      if (!networkService.isConnected) {
+        await offlineQueue.enqueue({
+          url: `${NOTES_ENDPOINT}/${note.noteId}`,
+          method: 'PUT',
+          body: payload,
+          headers: { 'Content-Type': 'application/json' },
+          description: `Editar nota: "${title.trim().substring(0, 30)}"`,
+        });
+        setHasUnsavedChanges(false);
+        Alert.alert('Guardado local', 'Se sincronizará cuando haya conexión', [
+          { text: 'OK', onPress: () => router.back() }
+        ]);
+        return;
+      }
+
       const response = await fetch(`${NOTES_ENDPOINT}/${note.noteId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          title: title.trim(),
-          content: content.trim(),
-          tagNames: tagArray,
-          tagSource: 'Manual',
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
         console.log('✅ Nota actualizada');
-        // Invalidar caché
         await cacheService.set('cache_notes', null, 0);
         setHasUnsavedChanges(false);
         Alert.alert('Éxito', 'Nota actualizada correctamente', [
@@ -250,13 +324,31 @@ export default function NoteDetailScreen() {
           onPress: async () => {
             setDeleting(true);
             try {
+              // Eliminar de caché inmediatamente
+              const cachedNotes = await cacheService.get('cache_notes') as Note[] | null;
+              if (cachedNotes) {
+                await cacheService.set('cache_notes', cachedNotes.filter(n => n.noteId !== note.noteId), 5 * 60 * 1000);
+              }
+
+              if (!networkService.isConnected) {
+                await offlineQueue.enqueue({
+                  url: `${NOTES_ENDPOINT}/${note.noteId}?userId=${userId}`,
+                  method: 'DELETE',
+                  headers: {},
+                  description: `Eliminar nota: "${note.title.substring(0, 30)}"`,
+                });
+                Alert.alert('Eliminada localmente', 'Se sincronizará cuando haya conexión', [
+                  { text: 'OK', onPress: () => router.back() }
+                ]);
+                return;
+              }
+
               const response = await fetch(`${NOTES_ENDPOINT}/${note.noteId}?userId=${userId}`, {
                 method: 'DELETE',
               });
 
               if (response.ok) {
                 console.log('✅ Nota eliminada');
-                // Invalidar caché
                 await cacheService.set('cache_notes', null, 0);
                 Alert.alert('Éxito', 'Nota eliminada correctamente', [
                   { text: 'OK', onPress: () => router.back() }
