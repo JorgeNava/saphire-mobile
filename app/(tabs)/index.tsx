@@ -31,6 +31,9 @@ import { networkService } from '../../services/networkService';
 import { offlineQueue } from '../../services/offlineQueue';
 import { logger } from '../../utils/logger';
 
+// @ts-ignore - no type declarations available
+const Markdown = require('react-native-markdown-display').default;
+
 interface Message {
   id: string;
   text: string;
@@ -80,6 +83,45 @@ export default function ChatScreen() {
   };
   const inputBg = isDark ? '#1A1F3A' : '#FFFFFF';
   const inputBorder = isDark ? '#2A2F4A' : '#E5E7EB';
+
+  const markdownStyles = {
+    body: { color: theme.text, fontSize: 15, lineHeight: 22 },
+    heading1: { color: theme.text, fontSize: 20, fontWeight: '700' as const, marginBottom: 4 },
+    heading2: { color: theme.text, fontSize: 18, fontWeight: '700' as const, marginBottom: 4 },
+    heading3: { color: theme.text, fontSize: 16, fontWeight: '600' as const, marginBottom: 2 },
+    strong: { fontWeight: '700' as const },
+    em: { fontStyle: 'italic' as const },
+    bullet_list: { marginVertical: 4 },
+    ordered_list: { marginVertical: 4 },
+    list_item: { marginVertical: 1 },
+    paragraph: { marginTop: 0, marginBottom: 6 },
+    link: { color: '#60A5FA' },
+    blockquote: { 
+      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+      borderLeftColor: '#60A5FA',
+      borderLeftWidth: 3,
+      paddingLeft: 8,
+      paddingVertical: 4,
+      marginVertical: 4,
+    },
+    code_inline: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+      color: '#F472B6',
+      fontSize: 13,
+      paddingHorizontal: 4,
+      borderRadius: 3,
+    },
+    fence: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+      borderRadius: 8,
+      padding: 8,
+      marginVertical: 4,
+    },
+    code_block: {
+      color: theme.text,
+      fontSize: 13,
+    },
+  };
 
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', text: 'Hola, Jorge 👋', fromMe: false },
@@ -272,6 +314,39 @@ export default function ChatScreen() {
       t.name.toLowerCase().includes(tagSearch.toLowerCase())
     ), [availableTags, tagSearch]);
 
+  const pollForIAResponse = (previousCount: number) => {
+    let attempts = 0;
+    const maxAttempts = 6;
+    const intervalMs = 3000;
+
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch(`${TEXT_ENDPOINT}?conversationId=${CONVERSATION_ID}&limit=100&sortOrder=desc`);
+        if (res.ok) {
+          const data = await res.json();
+          const messagesArray = data.items || [];
+          if (messagesArray.length > previousCount) {
+            const formattedMessages: Message[] = messagesArray.map((msg: any) => ({
+              id: msg.messageId || msg.id || String(Date.now()),
+              text: msg.content || msg.text || '',
+              fromMe: msg.sender === 'user123',
+              status: 'sent' as const,
+              sentAt: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+            }));
+            setMessages(formattedMessages);
+            await cacheService.setMessages(formattedMessages);
+            clearInterval(poll);
+            return;
+          }
+        }
+      } catch (err) {
+        logger.log('Poll error:', err);
+      }
+      if (attempts >= maxAttempts) clearInterval(poll);
+    }, intervalMs);
+  };
+
   const handleSend = async () => {
     if (!text.trim()) return;
     const id = Date.now().toString();
@@ -356,8 +431,8 @@ export default function ChatScreen() {
       // Invalidar caché para que la próxima carga traiga datos frescos
       await cacheService.invalidateMessages();
       
-      // NO recargar inmediatamente - el mensaje ya está en el estado
-      // La sincronización en background lo actualizará eventualmente
+      // Polling corto para captar la respuesta de IA (async, sin bloquear UI)
+      pollForIAResponse(messages.length + 1);
     } catch (err) {
       console.error(err);
       // Marcar mensaje como fallido
@@ -460,6 +535,10 @@ export default function ChatScreen() {
       setTags('');
       setSelectedTagNames([]);
       setShowTagsInput(false);
+      
+      // Polling corto para captar la respuesta de IA
+      await cacheService.invalidateMessages();
+      pollForIAResponse(messages.length + 1);
     } catch (err) {
       console.error('Error al procesar audio:', err);
     } finally {
@@ -545,13 +624,19 @@ export default function ChatScreen() {
               })
             }}
           >
-            <Text sx={{ 
-              color: item.fromMe ? '$white' : theme.text,
-              fontSize: '$md',
-              lineHeight: 20
-            }}>
-              {item.text}
-            </Text>
+            {item.fromMe ? (
+              <Text sx={{ 
+                color: '$white',
+                fontSize: '$md',
+                lineHeight: 20
+              }}>
+                {item.text}
+              </Text>
+            ) : (
+              <Markdown style={markdownStyles}>
+                {item.text}
+              </Markdown>
+            )}
             {/* Hora inline abajo a la derecha */}
             <HStack justifyContent="flex-end" sx={{ mt: '$1', gap: '$1' }}>
               {item.fromMe && item.status === 'sending' && (

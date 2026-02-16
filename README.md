@@ -2,8 +2,8 @@
 
 Aplicación móvil desarrollada con **React Native** y **Expo** que funciona como tu asistente personal inteligente. Permite gestionar mensajes, pensamientos, notas y listas, todo integrado con IA y sincronizado con un backend serverless en AWS.
 
-> **Versión actual**: 1.7.0  
-> **Backend**: Saphire Backend v0.0.4
+> **Versión actual**: 1.8.0  
+> **Backend**: Saphire Backend v0.0.10
 
 ---
 
@@ -32,6 +32,9 @@ Aplicación móvil desarrollada con **React Native** y **Expo** que funciona com
 - ✅ Real-time tag autocomplete
 - ✅ Offline-first con caché local
 - ✅ Dark/Light theme support
+- ✅ Markdown rendering en respuestas IA
+- ✅ Google Drive OAuth2 integration
+- ✅ Deep linking para callbacks OAuth
 
 ---
 
@@ -97,6 +100,8 @@ Y luego hacer el build con EAS.
 - **Separadores por día** estilo WhatsApp (Hoy, Ayer, fecha)
 - **Hora dentro de burbuja** de cada mensaje
 - **Selector de etiquetas con chips** (toggle, búsqueda, horizontal scroll)
+- **Respuestas IA con Markdown** (negritas, listas, código, blockquotes) 🆕
+- **Polling automático** para captar respuestas de Zafira (~3-6s) 🆕
 - Historial de conversación con paginación
 - Integración con IA para clasificación automática
 
@@ -140,6 +145,12 @@ Y luego hacer el build con EAS.
 - Información de la aplicación
 - Tecnologías utilizadas
 - Pantallas disponibles
+- **Enlace a configuración de Google Drive** 🆕
+
+### ⚙️ Configuración 🆕
+- **Google Drive**: Conectar/desconectar cuenta de Google
+- Estado de conexión en tiempo real
+- Flujo OAuth2 con deep linking de regreso a la app
 
 ---
 
@@ -235,6 +246,15 @@ PUT    /tags/{tagId}
 DELETE /tags/{tagId}
 ```
 
+#### Google Drive 🆕
+```
+POST   /drive/oauth/start?userId=X
+POST   /drive/oauth/callback
+GET    /drive/oauth/status?userId=X
+DELETE /drive/oauth?userId=X
+POST   /drive/query
+```
+
 ### Formato de Respuesta Paginada
 
 ```typescript
@@ -250,6 +270,13 @@ DELETE /tags/{tagId}
 ---
 
 ## 📝 Roadmap
+
+### ✅ Completado (v1.8.0)
+- ✅ Respuestas de Zafira con Markdown rendering (v1.8.0)
+- ✅ Polling automático para respuestas IA (v1.8.0)
+- ✅ Pantalla de integración Google Drive (v1.8.0)
+- ✅ Deep linking para OAuth callbacks (v1.8.0)
+- ✅ Modo Offline completo (v1.7.0)
 
 ### ✅ Completado (v1.6.0)
 - ✅ UI del Chat completamente rediseñada
@@ -288,6 +315,7 @@ DELETE /tags/{tagId}
 - [ ] Tests unitarios y E2E
 
 ### 🔮 Futuro
+- [ ] Integraciones adicionales (Dropbox, OneDrive)
 - [ ] Autenticación con AWS Cognito
 - [ ] Soporte multi-usuario
 - [ ] Notificaciones push

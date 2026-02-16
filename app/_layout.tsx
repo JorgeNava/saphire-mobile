@@ -40,6 +40,17 @@ export default function RootLayout() {
               },
             }} 
           />
+          <Stack.Screen 
+            name="settings/drive" 
+            options={{ 
+              headerShown: true,
+              headerBackTitle: 'Info',
+              headerTintColor: colorScheme === 'dark' ? '#FFFFFF' : '#1A1F3A',
+              headerStyle: {
+                backgroundColor: colorScheme === 'dark' ? '#0A0E27' : '#F5F7FA',
+              },
+            }} 
+          />
           <Stack.Screen name="+not-found" />
         </Stack>
         <OfflineBanner />

@@ -1,11 +1,15 @@
 import { Image } from 'expo-image';
-import { StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { StyleSheet, TouchableOpacity } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 
 export default function HomeScreen() {
+  const router = useRouter();
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#F5F7FA', dark: '#0A0E27' }}
@@ -18,17 +22,16 @@ export default function HomeScreen() {
     >
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="title">Saphire Mobile</ThemedText>
-        <ThemedText>Versión 1.7.0</ThemedText>
+        <ThemedText>Versión 1.8.0</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">✨ Novedades v1.7.0</ThemedText>
-        <ThemedText>• Modo offline: la app funciona sin internet</ThemedText>
-        <ThemedText>• Banner de estado de conexión en tiempo real</ThemedText>
-        <ThemedText>• Cola de operaciones pendientes offline</ThemedText>
-        <ThemedText>• Caché persistente que no expira sin internet</ThemedText>
-        <ThemedText>• Sincronización automática al restaurar conexión</ThemedText>
-        <ThemedText>• Mensajes se envían al volver online</ThemedText>
+        <ThemedText type="subtitle">✨ Novedades v1.8.0</ThemedText>
+        <ThemedText>• Respuestas de Zafira con formato Markdown</ThemedText>
+        <ThemedText>• Polling automático para respuestas IA (~3-6s)</ThemedText>
+        <ThemedText>• Integración con Google Drive (OAuth2)</ThemedText>
+        <ThemedText>• Deep linking para callbacks OAuth</ThemedText>
+        <ThemedText>• Mensajes de error visibles cuando algo falla</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
@@ -37,7 +40,8 @@ export default function HomeScreen() {
         <ThemedText>• Separadores por día (Hoy, Ayer, fecha)</ThemedText>
         <ThemedText>• Hora dentro de cada burbuja</ThemedText>
         <ThemedText>• Selector de etiquetas con chips tappables</ThemedText>
-        <ThemedText>• Búsqueda de etiquetas en panel horizontal</ThemedText>
+        <ThemedText>• Respuestas IA con Markdown (negritas, listas, código)</ThemedText>
+        <ThemedText>• Zafira confirma acciones (pensamiento, lista, investigación)</ThemedText>
         <ThemedText>• Estados visuales (enviando, enviado, error)</ThemedText>
         <ThemedText>• Historial de 100 mensajes con caché</ThemedText>
       </ThemedView>
@@ -91,7 +95,19 @@ export default function HomeScreen() {
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">� Tecnologías</ThemedText>
+        <ThemedText type="subtitle">Integraciones</ThemedText>
+        <TouchableOpacity
+          style={styles.integrationRow}
+          onPress={() => router.push('/settings/drive')}
+        >
+          <MaterialIcons name="cloud" size={22} color="#6C63FF" />
+          <ThemedText style={styles.integrationText}>Google Drive</ThemedText>
+          <MaterialIcons name="chevron-right" size={22} color="#A0A5C0" />
+        </TouchableOpacity>
+      </ThemedView>
+
+      <ThemedView style={styles.stepContainer}>
+        <ThemedText type="subtitle">Tecnologías</ThemedText>
         <ThemedText>• React Native + Expo SDK 52</ThemedText>
         <ThemedText>• TypeScript + Expo Router</ThemedText>
         <ThemedText>• AWS API Gateway + Lambda + DynamoDB</ThemedText>
@@ -120,5 +136,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     position: 'absolute',
+  },
+  integrationRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: 'rgba(108, 99, 255, 0.08)',
+  },
+  integrationText: {
+    flex: 1,
+    fontSize: 15,
   },
 });

@@ -7,6 +7,62 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.8.0] - 2026-02-15
+
+### ✨ Añadido
+
+#### 📝 Markdown en Respuestas de Zafira
+- **react-native-markdown-display**: Renderizado completo de Markdown en burbujas de chat
+- **Estilos adaptativos**: Soporte Dark/Light mode en headings, listas, code blocks, blockquotes
+- **Elementos soportados**: Negritas, cursivas, listas ordenadas/desordenadas, código inline, bloques de código, blockquotes, links
+- Solo se aplica a mensajes de Zafira (no del usuario)
+
+#### 🔄 Polling para Respuestas IA
+- **Polling automático**: Después de enviar un mensaje, revisa cada 3 segundos por respuesta de Zafira
+- **6 intentos máximo** (~18 segundos de ventana)
+- **Detección inteligente**: Compara cantidad de mensajes para detectar respuesta nueva
+- **Aplicado a**: Mensajes de texto y mensajes de audio
+- **No bloqueante**: Se ejecuta en background sin afectar la UI
+
+#### 📁 Integración con Google Drive
+- **Nueva pantalla**: `settings/drive.tsx` para conectar/desconectar Google Drive
+- **Estado en tiempo real**: Verifica si Drive está conectado al cargar la pantalla
+- **Flujo OAuth2**: Abre navegador para autorización de Google
+- **Deep linking**: Callback `saphiremobile://drive/callback` regresa a la app automáticamente
+- **Botón desconectar**: Revoca tokens y desconecta cuenta
+
+#### 🔗 Deep Linking
+- **Scheme configurado**: `saphiremobile` en `app.json`
+- **Ruta OAuth callback**: Redirección automática desde Google OAuth
+- **Stack.Screen**: `settings/drive` registrado en `_layout.tsx`
+
+#### ℹ️ Info — Enlace a Drive
+- **Nuevo botón**: "Google Drive" en pantalla Info navega a configuración de Drive
+- **Icono**: Material Icons `cloud` con indicador visual
+
+### 📝 Cambios Técnicos
+
+#### Archivos Nuevos
+- `app/settings/drive.tsx`: Pantalla de configuración de Google Drive
+- `types/react-native-markdown-display.d.ts`: Declaración de tipos TypeScript
+
+#### Archivos Modificados
+- `app/(tabs)/index.tsx`: Markdown rendering, polling para respuestas IA
+- `app/(tabs)/info.tsx`: Botón de navegación a Google Drive
+- `app/_layout.tsx`: Stack.Screen para `settings/drive`
+- `app.json`: Deep link scheme `saphiremobile`
+
+#### Dependencias Nuevas
+- `react-native-markdown-display`: Renderizado de Markdown en React Native
+
+### 📊 Estadísticas
+- **Archivos Nuevos**: 2
+- **Archivos Modificados**: 4
+- **Funcionalidades Nuevas**: 4 mayores
+- **Dependencias Agregadas**: 1
+
+---
+
 ## [1.7.0] - 2026-02-14
 
 ### ✨ Añadido
