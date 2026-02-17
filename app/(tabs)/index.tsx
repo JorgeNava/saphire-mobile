@@ -647,7 +647,7 @@ export default function ChatScreen() {
               )}
               {item.sentAt && (
                 <Text sx={{ 
-                  color: item.fromMe ? 'rgba(255,255,255,0.55)' : (isDark ? '$gray500' : '$gray400'),
+                  color: item.fromMe ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.55)',
                   fontSize: 10,
                 }}>
                   {formatTime(item.sentAt)}

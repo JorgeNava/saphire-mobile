@@ -1,23 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Modal,
+    Pressable,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+    useColorScheme
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { cacheService } from '../../services/cacheService';
 
 const API_BASE = 'https://zon9g6gx9k.execute-api.us-east-1.amazonaws.com';
@@ -80,9 +78,14 @@ export default function TagsScreen() {
       if (reset && !backendSearchTerm && !forceRefresh) {
         const cached = await cacheService.get('cache_tags');
         if (cached && Array.isArray(cached)) {
+          const limitedCache = (cached as Tag[]).slice(0, limit);
           setAllTags(cached as Tag[]);
-          setTags(cached as Tag[]);
-          console.log('✅ Tags cargados desde caché');
+          setTags(limitedCache);
+          setHasMore((cached as Tag[]).length > limit);
+          console.log(`✅ Tags cargados desde caché (${limitedCache.length}/${(cached as Tag[]).length})`);
+          setLoading(false);
+          isLoadingRef.current = false;
+          return; // Salir temprano para evitar fetch
         }
       }
 
@@ -146,19 +149,19 @@ export default function TagsScreen() {
     }
   };
 
-  // Filtrado local en tiempo real
+  // Filtrado local en tiempo real - solo cuando hay búsqueda activa
   useEffect(() => {
     if (!searchTerm.trim()) {
-      // Si no hay búsqueda, mostrar todos los tags
-      setTags(allTags);
-    } else {
-      // Filtrar localmente mientras se escribe
-      const searchLower = searchTerm.toLowerCase();
-      const filtered = allTags.filter(tag => 
-        tag.name.toLowerCase().includes(searchLower)
-      );
-      setTags(filtered);
+      // Si no hay búsqueda, no hacer nada (tags ya está seteado desde fetchTags)
+      return;
     }
+    
+    // Filtrar localmente mientras se escribe
+    const searchLower = searchTerm.toLowerCase();
+    const filtered = allTags.filter(tag => 
+      tag.name.toLowerCase().includes(searchLower)
+    );
+    setTags(filtered);
   }, [searchTerm, allTags]);
 
   // Búsqueda en backend al presionar Enter
