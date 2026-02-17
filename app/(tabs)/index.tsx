@@ -138,8 +138,13 @@ export default function ChatScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [micPressed, setMicPressed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
+  const [showMessageMenu, setShowMessageMenu] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{x: number, y: number} | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const audioPlaceholderId = useRef<string | null>(null);
   const flatListRef = useRef<FlatList<Message>>(null);
+  const messageRefs = useRef<{[key: string]: any}>({});
   
   // Estados para etiquetas (manejadas por TagSelector)
   const [availableTags, setAvailableTags] = useState<Array<{tagId: string; name: string}>>([]);
@@ -375,6 +380,119 @@ export default function ChatScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  // Funciones para menú contextual de mensajes
+  const handleMessagePressIn = (messageId: string) => {
+    setSelectedMessage(messageId);
+    setShowMessageMenu(true);
+    
+    // Obtener posición real del mensaje inmediatamente
+    const messageRef = messageRefs.current[messageId];
+    if (messageRef) {
+      try {
+        messageRef.measure((x: number, y: number, width: number, height: number, pageX: number, pageY: number) => {
+          // Posicionar menú arriba del mensaje
+          // Si es el último mensaje (index 0), subir más
+          const messageIndex = messages.findIndex(m => m.id === messageId);
+          const extraOffset = messageIndex === 0 ? 30 : 10; // Más espacio si es el último
+          const menuY = Math.max((pageY || 0) - extraOffset, 80);
+          const menuX = 40; // 40px desde la derecha
+          setMenuPosition({ x: menuX, y: menuY });
+        });
+      } catch (error) {
+        console.log('Error measuring message:', error);
+        // Fallback a posición calculada
+        setMenuPosition({ x: 40, y: 200 });
+      }
+    }
+  };
+
+  const handleMessagePressOut = () => {
+    // NO cancelar el timer - el menú debe aparecer aunque se suelte
+  };
+
+  const handleCopyMessage = () => {
+    if (selectedMessage) {
+      const message = messages.find(m => m.id === selectedMessage);
+      if (message) {
+        Clipboard.setString(message.text);
+      }
+    }
+    setShowMessageMenu(false);
+    setSelectedMessage(null);
+  };
+
+  
+  const handleDeleteMessage = async () => {
+    if (!selectedMessage) return;
+    
+    // Obtener el mensaje seleccionado
+    const message = messages.find(m => m.id === selectedMessage);
+    if (!message) {
+      return;
+    }
+    
+    // Mostrar modal personalizado
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedMessage) return;
+    
+    try {
+      // Eliminar del backend primero
+      const deleteEndpoint = `${API_BASE}/messages/${selectedMessage}`;
+      const response = await fetch(deleteEndpoint, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error eliminando mensaje:', errorText);
+        Alert.alert('❌ Error', 'No se pudo eliminar el mensaje. Intenta de nuevo.');
+        return;
+      }
+      
+      // Si el backend eliminó correctamente, actualizar UI local
+      setMessages(prev => prev.filter(m => m.id !== selectedMessage));
+      
+      // Invalidar caché para mantener sincronización
+      await cacheService.invalidateMessages();
+      
+      // Cerrar menú y modal
+      setShowMessageMenu(false);
+      setShowDeleteModal(false);
+      setSelectedMessage(null);
+      
+      console.log('✅ Mensaje eliminado exitosamente');
+    } catch (error) {
+      console.error('Error al eliminar mensaje:', error);
+      Alert.alert('❌ Error', 'No se pudo eliminar el mensaje. Intenta de nuevo.');
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
+  };
+
+  const handleShareMessage = () => {
+    if (selectedMessage) {
+      const message = messages.find(m => m.id === selectedMessage);
+      if (message) {
+        // Aquí podrías implementar compartir
+        Alert.alert('Compartir', 'Función de compartir próximamente');
+      }
+    }
+    setShowMessageMenu(false);
+    setSelectedMessage(null);
+  };
+
+  const closeMessageMenu = () => {
+    setShowMessageMenu(false);
+    setSelectedMessage(null);
+    setMenuPosition(null);
+  };
 
   const handleSend = async () => {
     if (!text.trim()) return;
@@ -632,28 +750,12 @@ export default function ChatScreen() {
 
           {/* Burbuja del mensaje con hora inline */}
           <Pressable
-            onLongPress={() => {
-              Alert.alert(
-                'Copiar Mensaje',
-                '¿Deseas copiar este mensaje?',
-                [
-                  {
-                    text: 'Cancelar',
-                    style: 'cancel',
-                  },
-                  {
-                    text: 'Copiar',
-                    onPress: () => {
-                      Clipboard.setString(item.text);
-                      Alert.alert('Copiado', 'Mensaje copiado al portapapeles');
-                    },
-                  },
-                ]
-              );
-            }}
+            onPressIn={() => handleMessagePressIn(item.id)}
+            onPressOut={handleMessagePressOut}
             style={{ maxWidth: '75%' }}
           >
             <Box
+              ref={(ref) => { messageRefs.current[item.id] = ref; }}
               sx={{ 
                 px: '$3', 
                 pt: '$2.5', 
@@ -983,6 +1085,221 @@ export default function ChatScreen() {
           </HStack>
         </Box>
       </Box>
+
+      {/* Menú contextual estilo Gemini - UI Original */}
+      {showMessageMenu && menuPosition && (
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.3)',
+          }}
+          onPress={closeMessageMenu}
+        >
+          <Pressable
+            style={{
+              position: 'absolute',
+              top: menuPosition.y,
+              left: menuPosition.x,
+              backgroundColor: isDark ? '#2A2F4A' : '#FFFFFF',
+              borderRadius: 12,
+              padding: 8,
+              minWidth: 200,
+              maxWidth: 280,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.15,
+              shadowRadius: 12,
+              elevation: 8,
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Header del menú */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderBottomWidth: 1,
+              borderBottomColor: isDark ? '#3A3F5A' : '#E5E7EB',
+            }}>
+              <Ionicons name="ellipsis-horizontal" size={20} color={isDark ? '#E5E7EB' : '#374151'} />
+              <Text style={{
+                color: isDark ? '#E5E7EB' : '#374151',
+                fontSize: 14,
+                fontWeight: '600',
+                marginLeft: 8,
+              }}>
+                Opciones
+              </Text>
+            </View>
+
+            {/* Opciones del menú */}
+            <View>
+              {/* Copiar */}
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 12,
+                  paddingVertical: 12,
+                }}
+                onPress={handleCopyMessage}
+              >
+                <Ionicons name="copy-outline" size={20} color={isDark ? '#E5E7EB' : '#374151'} />
+                <Text style={{
+                  color: isDark ? '#E5E7EB' : '#374151',
+                  fontSize: 15,
+                  marginLeft: 12,
+                }}>
+                  Copiar
+                </Text>
+              </TouchableOpacity>
+
+              {/* Eliminar (todos los mensajes) */}
+              {selectedMessage && (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 12,
+                    paddingVertical: 12,
+                  }}
+                  onPress={handleDeleteMessage}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                  <Text style={{
+                    color: '#EF4444',
+                    fontSize: 15,
+                    marginLeft: 12,
+                  }}>
+                    Eliminar
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </Pressable>
+        </Pressable>
+      )}
+
+      {/* Modal personalizado para eliminar mensaje */}
+      {showDeleteModal && (
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+          onPress={handleCancelDelete}
+        >
+          <Pressable
+            style={{
+              backgroundColor: isDark ? '#2A2F4A' : '#FFFFFF',
+              borderRadius: 16,
+              padding: 24,
+              margin: 20,
+              minWidth: 300,
+              maxWidth: 400,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.25,
+              shadowRadius: 16,
+              elevation: 12,
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: 16,
+            }}>
+              <Text style={{
+                fontSize: 24,
+                marginRight: 8,
+              }}>
+                🗑️
+              </Text>
+              <Text style={{
+                fontSize: 18,
+                fontWeight: '600',
+                color: isDark ? '#FFFFFF' : '#1F2937',
+              }}>
+                Eliminar mensaje
+              </Text>
+            </View>
+
+            {/* Mensaje */}
+            <Text style={{
+              fontSize: 15,
+              lineHeight: 22,
+              color: isDark ? '#E5E7EB' : '#4B5563',
+              marginBottom: 24,
+              textAlign: 'center',
+            }}>
+              ¿Estás seguro de que quieres eliminar este mensaje?
+              {'\n\n'}
+              Esta acción no se puede deshacer y el mensaje se eliminará permanentemente.
+            </Text>
+
+            {/* Botones */}
+            <View style={{
+              flexDirection: 'row',
+              gap: 12,
+            }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  paddingHorizontal: 20,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: isDark ? '#4B5563' : '#D1D5DB',
+                  backgroundColor: 'transparent',
+                }}
+                onPress={handleCancelDelete}
+              >
+                <Text style={{
+                  fontSize: 15,
+                  fontWeight: '500',
+                  color: isDark ? '#E5E7EB' : '#374151',
+                  textAlign: 'center',
+                }}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  paddingHorizontal: 20,
+                  borderRadius: 8,
+                  backgroundColor: '#EF4444',
+                }}
+                onPress={handleConfirmDelete}
+              >
+                <Text style={{
+                  fontSize: 15,
+                  fontWeight: '500',
+                  color: '#FFFFFF',
+                  textAlign: 'center',
+                }}>
+                  Eliminar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      )}
     </KeyboardAvoidingView>
   );
 }
