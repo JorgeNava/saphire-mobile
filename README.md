@@ -2,7 +2,7 @@
 
 Aplicación móvil desarrollada con **React Native** y **Expo** que funciona como tu asistente personal inteligente. Permite gestionar mensajes, pensamientos, notas y listas, todo integrado con IA y sincronizado con un backend serverless en AWS.
 
-> **Versión actual**: 1.8.0  
+> **Versión actual**: 1.8.1  
 > **Backend**: Saphire Backend v0.0.10
 
 ---
@@ -102,6 +102,9 @@ Y luego hacer el build con EAS.
 - **Selector de etiquetas con chips** (toggle, búsqueda, horizontal scroll)
 - **Respuestas IA con Markdown** (negritas, listas, código, blockquotes) 🆕
 - **Polling automático** para captar respuestas de Saphira (~3-6s) 🆕
+- **Menú contextual** al presionar mensajes (copiar, eliminar) 🆕
+- **Posicionamiento dinámico** del menú 10px arriba del mensaje 🆕
+- **Modal de confirmación** para eliminación con diseño temático 🆕
 - Historial de conversación con paginación
 - Integración con IA para clasificación automática
 
@@ -204,7 +207,7 @@ POST   /messages
 POST   /messages/audio
 GET    /messages/upload-url
 PUT    /messages/{conversationId}/{timestamp}
-DELETE /messages/{conversationId}/{timestamp}
+DELETE /messages/{messageId}
 ```
 
 #### Thoughts
@@ -271,7 +274,11 @@ POST   /drive/query
 
 ## 📝 Roadmap
 
-### ✅ Completado (v1.8.0)
+### ✅ Completado (v1.8.1)
+- ✅ Menú contextual en mensajes con copiar/eliminar (v1.8.1)
+- ✅ Posicionamiento dinámico del menú contextual (v1.8.1)
+- ✅ Modal de confirmación para eliminación con diseño temático (v1.8.1)
+- ✅ Integración DELETE /messages/{messageId} con backend (v1.8.1)
 - ✅ Respuestas de Saphira con Markdown rendering (v1.8.0)
 - ✅ Polling automático para respuestas IA (v1.8.0)
 - ✅ Pantalla de integración Google Drive (v1.8.0)

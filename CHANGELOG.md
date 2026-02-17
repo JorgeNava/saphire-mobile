@@ -7,6 +7,77 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.8.1] - 2026-02-16
+
+### ✨ Añadido
+
+#### 📱 Menú Contextual en Mensajes
+- **Activación por touch**: Menú aparece al presionar mensajes (sin timer)
+- **Posicionamiento dinámico**: 10px arriba del mensaje seleccionado
+- **Offset especial**: 30px extra para el último mensaje (index 0)
+- **Posición fallback**: {x: 40, y: 200} si hay error en medición
+- **Medición real**: Usa `measure()` del componente para posición exacta
+
+#### 🗑️ Funcionalidad de Eliminación
+- **Modal de confirmación**: Diseño temático con esquinas curvadas
+- **Adaptativo**: Colores Dark/Light mode consistentes
+- **Sombra profunda**: `shadowOpacity: 0.25` con `elevation: 12`
+- **Texto descriptivo**: "Esta acción no se puede deshacer y el mensaje se eliminará permanentemente"
+- **Botones estilizados**: Cancelar (outline) + Eliminar (rojo sólido)
+
+#### 🔌 Integración con Backend
+- **DELETE endpoint**: `DELETE /messages/{messageId}`
+- **Sincronización**: Invalida caché de mensajes después de eliminar
+- **Validación**: Solo permite eliminar si el mensaje existe
+- **Error handling**: Alert detallado si falla eliminación
+
+#### 🎨 UI/UX Mejorada
+- **Iconos estandarizados**: Todos los iconos de 18px para consistencia
+- **Sin alertas de éxito**: Eliminación silenciosa con feedback visual
+- **Overlay semitransparente**: Fondo `rgba(0,0,0,0.5)` para modal
+- **Tap fuera para cerrar**: Modal se cierra al tocar el fondo
+
+### 🔧 Corregido
+
+#### Errores de Posicionamiento
+- **Fix NaN positions**: Validación `(pageY || 0)` para evitar undefined
+- **Fix field sizes**: Estandarización de tamaños de iconos Ionicons
+- **Error handling**: Try-catch en `measure()` con fallback seguro
+
+#### Prevención de Scroll
+- **Scroll detection**: Intentado con múltiples métodos (removido por interferencia)
+- **Touch duration**: Lógica para diferenciar scroll vs touch intencional
+- **Simplificación final**: Enfoque directo sin detección de scroll
+
+### 📝 Cambios Técnicos
+
+#### Archivos Modificados
+- `app/(tabs)/index.tsx`: Menú contextual, posicionamiento, modal de eliminación
+- `package.json`: Versión 1.8.0 → 1.8.1
+- `app.json`: Versión 1.8.0 → 1.8.1
+- `README.md`: Actualizado con nuevas características
+
+#### Componentes UI
+- **Modal personalizado**: Componente completo con diseño temático
+- **Posicionamiento dinámico**: Sistema de refs y medición
+- **Integración backend**: DELETE endpoint con manejo de errores
+
+### 📊 Estadísticas
+- **Archivos Modificados**: 4
+- **Líneas Agregadas**: ~150
+- **Funcionalidades Nuevas**: 3 mayores
+- **Bugs Corregidos**: 3
+- **Componentes UI**: 1 nuevo (modal)
+
+### 🎯 Highlights
+- 📱 Menú contextual intuitivo en mensajes
+- 🗑️ Eliminación completa con backend sync
+- 🎨 Modal temático con esquinas curvadas
+- 📍 Posicionamiento dinámico y preciso
+- 🤫 Operaciones silenciosas sin alertas innecesarias
+
+---
+
 ## [1.8.0] - 2026-02-15
 
 ### ✨ Añadido

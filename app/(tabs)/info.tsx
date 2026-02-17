@@ -22,11 +22,20 @@ export default function HomeScreen() {
     >
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="title">Saphire Mobile</ThemedText>
-        <ThemedText>Versión 1.8.0</ThemedText>
+        <ThemedText>Versión 1.8.1</ThemedText>
       </ThemedView>
 
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">✨ Novedades v1.8.0</ThemedText>
+        <ThemedText type="subtitle">✨ Novedades v1.8.1</ThemedText>
+        <ThemedText>• Menú contextual en mensajes (copiar, eliminar)</ThemedText>
+        <ThemedText>• Posicionamiento dinámico del menú contextual</ThemedText>
+        <ThemedText>• Modal de confirmación con diseño temático</ThemedText>
+        <ThemedText>• Eliminación sincronizada con backend</ThemedText>
+        <ThemedText>• Operaciones silenciosas sin alertas</ThemedText>
+      </ThemedView>
+
+      <ThemedView style={styles.stepContainer}>
+        <ThemedText type="subtitle">📝 Novedades v1.8.0</ThemedText>
         <ThemedText>• Respuestas de Saphira con formato Markdown</ThemedText>
         <ThemedText>• Polling automático para respuestas IA (~3-6s)</ThemedText>
         <ThemedText>• Integración con Google Drive (OAuth2)</ThemedText>
@@ -40,6 +49,7 @@ export default function HomeScreen() {
         <ThemedText>• Separadores por día (Hoy, Ayer, fecha)</ThemedText>
         <ThemedText>• Hora dentro de cada burbuja</ThemedText>
         <ThemedText>• Selector de etiquetas con chips tappables</ThemedText>
+        <ThemedText>• Menú contextual en mensajes (copiar, eliminar)</ThemedText>
         <ThemedText>• Respuestas IA con Markdown (negritas, listas, código)</ThemedText>
         <ThemedText>• Saphira confirma acciones (pensamiento, lista, investigación)</ThemedText>
         <ThemedText>• Estados visuales (enviando, enviado, error)</ThemedText>
