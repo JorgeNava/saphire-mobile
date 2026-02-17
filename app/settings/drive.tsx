@@ -3,12 +3,12 @@ import { Stack, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Alert,
+    StyleSheet,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
@@ -186,7 +186,7 @@ export default function DriveSettingsScreen() {
         <Text style={[styles.description, { color: theme.subtext }]}>
           {status?.connected
             ? 'Tu Google Drive está conectado. Puedes preguntar sobre tus libros y documentos directamente desde el chat.'
-            : 'Conecta tu Google Drive para consultar tus resúmenes de libros, documentos y más directamente desde el chat de Zafira.'}
+            : 'Conecta tu Google Drive para consultar tus resúmenes de libros, documentos y más directamente desde el chat de Saphira.'}
         </Text>
 
         {/* Action button */}

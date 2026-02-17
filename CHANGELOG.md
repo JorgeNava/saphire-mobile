@@ -11,14 +11,14 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ### ✨ Añadido
 
-#### 📝 Markdown en Respuestas de Zafira
+#### 📝 Markdown en Respuestas de Saphira
 - **react-native-markdown-display**: Renderizado completo de Markdown en burbujas de chat
 - **Estilos adaptativos**: Soporte Dark/Light mode en headings, listas, code blocks, blockquotes
 - **Elementos soportados**: Negritas, cursivas, listas ordenadas/desordenadas, código inline, bloques de código, blockquotes, links
-- Solo se aplica a mensajes de Zafira (no del usuario)
+- Solo se aplica a mensajes de Saphira (no del usuario)
 
 #### 🔄 Polling para Respuestas IA
-- **Polling automático**: Después de enviar un mensaje, revisa cada 3 segundos por respuesta de Zafira
+- **Polling automático**: Después de enviar un mensaje, revisa cada 3 segundos por respuesta de Saphira
 - **6 intentos máximo** (~18 segundos de ventana)
 - **Detección inteligente**: Compara cantidad de mensajes para detectar respuesta nueva
 - **Aplicado a**: Mensajes de texto y mensajes de audio
@@ -462,7 +462,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 #### 💬 UI del Chat Completamente Rediseñada
 - **Burbujas de Mensaje Modernas**: Estilo WhatsApp con sombras y bordes redondeados
-- **Avatares**: "J" para usuario, "Z" para Zafira (asistente)
+- **Avatares**: "J" para usuario, "S" para Saphira (asistente)
 - **Header Mejorado**: Información del asistente con avatar
 - **Estados Visuales**: Indicadores de "enviando", "enviado", "error"
 - **Historial Completo**: Carga de 100 mensajes más recientes

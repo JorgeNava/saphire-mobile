@@ -101,7 +101,7 @@ Y luego hacer el build con EAS.
 - **Hora dentro de burbuja** de cada mensaje
 - **Selector de etiquetas con chips** (toggle, búsqueda, horizontal scroll)
 - **Respuestas IA con Markdown** (negritas, listas, código, blockquotes) 🆕
-- **Polling automático** para captar respuestas de Zafira (~3-6s) 🆕
+- **Polling automático** para captar respuestas de Saphira (~3-6s) 🆕
 - Historial de conversación con paginación
 - Integración con IA para clasificación automática
 
@@ -272,7 +272,7 @@ POST   /drive/query
 ## 📝 Roadmap
 
 ### ✅ Completado (v1.8.0)
-- ✅ Respuestas de Zafira con Markdown rendering (v1.8.0)
+- ✅ Respuestas de Saphira con Markdown rendering (v1.8.0)
 - ✅ Polling automático para respuestas IA (v1.8.0)
 - ✅ Pantalla de integración Google Drive (v1.8.0)
 - ✅ Deep linking para OAuth callbacks (v1.8.0)

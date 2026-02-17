@@ -1,28 +1,30 @@
 // ChatScreen.tsx
 import { Ionicons } from '@expo/vector-icons';
 import {
-    Box,
-    HStack,
-    KeyboardAvoidingView,
-    Pressable,
-    Text
+  Box,
+  HStack,
+  KeyboardAvoidingView,
+  Pressable,
+  Text
 } from '@gluestack-ui/themed';
 import { Buffer } from 'buffer';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    GestureResponderEvent,
-    LayoutAnimation,
-    ListRenderItem,
-    Platform,
-    ScrollView,
-    TextInput,
-    TouchableOpacity,
-    useColorScheme,
-    View,
+  Alert,
+  Clipboard,
+  FlatList,
+  GestureResponderEvent,
+  LayoutAnimation,
+  ListRenderItem,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  useColorScheme,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -135,6 +137,7 @@ export default function ChatScreen() {
   const [sendingAudio, setSendingAudio] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [micPressed, setMicPressed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const audioPlaceholderId = useRef<string | null>(null);
   const flatListRef = useRef<FlatList<Message>>(null);
   
@@ -346,6 +349,32 @@ export default function ChatScreen() {
       if (attempts >= maxAttempts) clearInterval(poll);
     }, intervalMs);
   };
+
+  // Pull-to-refresh para buscar nuevos mensajes
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch(`${TEXT_ENDPOINT}?conversationId=${CONVERSATION_ID}&limit=100&sortOrder=desc`);
+      if (res.ok) {
+        const data = await res.json();
+        const messagesArray = data.items || [];
+        const formattedMessages: Message[] = messagesArray.map((msg: any) => ({
+          id: msg.messageId || msg.id || String(Date.now()),
+          text: msg.content || msg.text || '',
+          fromMe: msg.sender === 'user123',
+          status: 'sent' as const,
+          sentAt: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+        }));
+        setMessages(formattedMessages);
+        await cacheService.setMessages(formattedMessages);
+        logger.log(`✅ Refresh: ${formattedMessages.length} mensajes actualizados`);
+      }
+    } catch (err) {
+      console.error('Error refreshing messages:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const handleSend = async () => {
     if (!text.trim()) return;
@@ -584,7 +613,7 @@ export default function ChatScreen() {
           alignItems="flex-end"
           sx={{ gap: '$2', mb: '$2' }}
         >
-          {/* Avatar para mensajes de Zafira */}
+          {/* Avatar para mensajes de Saphira */}
           {!item.fromMe && (
             <Box 
               sx={{ 
@@ -597,33 +626,54 @@ export default function ChatScreen() {
                 mb: '$1'
               }}
             >
-              <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold' }}>Z</Text>
+              <Text sx={{ color: '$white', fontSize: '$sm', fontWeight: 'bold' }}>S</Text>
             </Box>
           )}
 
           {/* Burbuja del mensaje con hora inline */}
-          <Box
-            sx={{ 
-              px: '$3', 
-              pt: '$2.5', 
-              pb: '$1.5', 
-              bg: item.fromMe ? '$blue600' : theme.card,
-              borderRadius: '$2xl',
-              maxWidth: '75%',
-              shadowColor: '$black',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.1,
-              shadowRadius: 2,
-              elevation: 2,
-              ...(item.fromMe ? {
-                borderBottomRightRadius: '$sm'
-              } : {
-                borderBottomLeftRadius: '$sm',
-                borderWidth: 1,
-                borderColor: theme.border
-              })
+          <Pressable
+            onLongPress={() => {
+              Alert.alert(
+                'Copiar Mensaje',
+                '¿Deseas copiar este mensaje?',
+                [
+                  {
+                    text: 'Cancelar',
+                    style: 'cancel',
+                  },
+                  {
+                    text: 'Copiar',
+                    onPress: () => {
+                      Clipboard.setString(item.text);
+                      Alert.alert('Copiado', 'Mensaje copiado al portapapeles');
+                    },
+                  },
+                ]
+              );
             }}
+            style={{ maxWidth: '75%' }}
           >
+            <Box
+              sx={{ 
+                px: '$3', 
+                pt: '$2.5', 
+                pb: '$1.5', 
+                bg: item.fromMe ? '$blue600' : theme.card,
+                borderRadius: '$2xl',
+                shadowColor: '$black',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.1,
+                shadowRadius: 2,
+                elevation: 2,
+                ...(item.fromMe ? {
+                  borderBottomRightRadius: '$sm'
+                } : {
+                  borderBottomLeftRadius: '$sm',
+                  borderWidth: 1,
+                  borderColor: theme.border
+                })
+              }}
+            >
             {item.fromMe ? (
               <Text sx={{ 
                 color: '$white',
@@ -658,6 +708,7 @@ export default function ChatScreen() {
               )}
             </HStack>
           </Box>
+          </Pressable>
 
           {/* Avatar para mensajes del usuario */}
           {item.fromMe && (
@@ -711,11 +762,11 @@ export default function ChatScreen() {
                 alignItems: 'center'
               }}
             >
-              <Text sx={{ color: '$white', fontSize: '$lg', fontWeight: 'bold' }}>Z</Text>
+              <Text sx={{ color: '$white', fontSize: '$lg', fontWeight: 'bold' }}>S</Text>
             </Box>
             <Box flex={1}>
               <Text sx={{ color: theme.text, fontSize: '$xl', fontWeight: 'bold' }}>
-                Zafira
+                Saphira
               </Text>
               <Text sx={{ color: '$white', fontSize: '$xs' }}>
                 Tu asistente inteligente
@@ -737,6 +788,15 @@ export default function ChatScreen() {
             paddingBottom: 8
           }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={isDark ? '#60A5FA' : '#3B82F6'}
+              colors={[isDark ? '#60A5FA' : '#3B82F6']}
+              progressBackgroundColor={isDark ? '#1F2937' : '#F3F4F6'}
+            />
+          }
         />
 
         {/* Sección de input */}

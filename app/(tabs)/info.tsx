@@ -27,7 +27,7 @@ export default function HomeScreen() {
 
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">✨ Novedades v1.8.0</ThemedText>
-        <ThemedText>• Respuestas de Zafira con formato Markdown</ThemedText>
+        <ThemedText>• Respuestas de Saphira con formato Markdown</ThemedText>
         <ThemedText>• Polling automático para respuestas IA (~3-6s)</ThemedText>
         <ThemedText>• Integración con Google Drive (OAuth2)</ThemedText>
         <ThemedText>• Deep linking para callbacks OAuth</ThemedText>
@@ -41,7 +41,7 @@ export default function HomeScreen() {
         <ThemedText>• Hora dentro de cada burbuja</ThemedText>
         <ThemedText>• Selector de etiquetas con chips tappables</ThemedText>
         <ThemedText>• Respuestas IA con Markdown (negritas, listas, código)</ThemedText>
-        <ThemedText>• Zafira confirma acciones (pensamiento, lista, investigación)</ThemedText>
+        <ThemedText>• Saphira confirma acciones (pensamiento, lista, investigación)</ThemedText>
         <ThemedText>• Estados visuales (enviando, enviado, error)</ThemedText>
         <ThemedText>• Historial de 100 mensajes con caché</ThemedText>
       </ThemedView>
